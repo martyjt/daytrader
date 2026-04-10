@@ -1,0 +1,58 @@
+# Daytrader default configuration.
+# Overridden per-tenant in the database and per-env via environment variables.
+
+app:
+  name: Daytrader
+  env: dev
+  host: 0.0.0.0
+  port: 8080
+
+ui:
+  theme: dark
+  title: "Daytrader — Trade without emotion"
+  page_title_pattern: "{page} · Daytrader"
+
+tenancy:
+  isolation_model: row-level  # Phase 0-1. Upgradable to schema-per-tenant later.
+
+auth:
+  mode: stub  # Phase 0: hardcoded default tenant + user. Real auth lands in Phase 2.
+  session_lifetime_minutes: 1440
+
+data:
+  default_crypto_adapter: ccxt_binance
+  default_equities_adapter: yfinance
+  feature_cache_dir: data/features
+  ohlcv_timeframes: [1m, 5m, 15m, 1h, 4h, 1d]
+
+backtest:
+  engine: backtesting_py  # Phase 0. vectorbt available in Phase 3+ under [opt] extra.
+  default_warmup_bars: 200
+  default_commission_bps: 10  # 0.10% per side
+  default_slippage_bps: 5     # 0.05% per side
+
+risk:
+  per_trade:
+    default_stop_loss_atr_mult: 2.0
+    default_take_profit_atr_mult: 4.0
+    max_hold_bars: 500
+  per_persona:
+    default_daily_loss_limit_pct: 5.0
+    default_max_open_positions: 10
+    default_max_leverage: 1.0
+  global:
+    kill_switch_enabled: true
+    max_drawdown_pct: 20.0
+    data_staleness_seconds: 120
+
+ritual:
+  gates:
+    backtest:
+      min_trades: 30
+      min_sharpe: 0.5
+    walk_forward:
+      folds: 5
+      min_oos_sharpe: 0.3
+    paper:
+      min_days: 7
+      min_trades: 10

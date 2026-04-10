@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/
+*.parquet
+*.db
+*.sqlite3
+
+# mlflow
+mlruns/
+mlartifacts/
+
+# Docker volumes (if bound locally)
+volumes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
