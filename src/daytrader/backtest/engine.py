@@ -83,6 +83,7 @@ class BacktestEngine:
         data: pl.DataFrame | None = None,
         adapter: Any = None,
         risk_config: RiskConfig | None = None,
+        params: dict[str, Any] | None = None,
     ) -> BacktestResult:
         """Execute a backtest.
 
@@ -121,10 +122,16 @@ class BacktestEngine:
                 venue=resolved_venue,
             )
 
+        # Resolve params: manifest defaults merged with user overrides
+        resolved_params = algorithm.manifest.param_defaults()
+        if params:
+            resolved_params.update(params)
+
         return self._simulate(
             algorithm, symbol, timeframe, data,
             initial_capital, fee_model, resolved_venue,
             risk_config=risk_config,
+            params=resolved_params,
         )
 
     def _simulate(
@@ -138,6 +145,7 @@ class BacktestEngine:
         venue: str,
         *,
         risk_config: RiskConfig | None = None,
+        params: dict[str, Any] | None = None,
     ) -> BacktestResult:
         if risk_config is None:
             risk_config = RiskConfig.disabled()
@@ -321,7 +329,7 @@ class BacktestEngine:
                     "volume": volumes[: i + 1],
                 },
                 features={},
-                params={},
+                params=params or {},
                 emit_fn=emitted.append,
                 log_fn=lambda msg, fields, _i=i, _ts=timestamps[i]: debug_logs.append(
                     {"bar": _i, "timestamp": str(_ts), "message": msg, **fields}

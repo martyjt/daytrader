@@ -24,7 +24,8 @@ import numpy as np
 import polars as pl
 import xgboost as xgb
 
-from ..base import Algorithm, AlgorithmManifest
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import rsi as _compute_rsi
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
 
@@ -49,27 +50,7 @@ def _rolling_return(closes: np.ndarray, period: int) -> np.ndarray:
 
 def _rsi(closes: np.ndarray, period: int = 14) -> np.ndarray:
     """Compute RSI from close prices using Wilder smoothing."""
-    out = np.full(len(closes), np.nan)
-    if len(closes) < period + 1:
-        return out
-
-    deltas = np.diff(closes)
-    gains = np.where(deltas > 0, deltas, 0.0)
-    losses = np.where(deltas < 0, -deltas, 0.0)
-
-    avg_gain = np.mean(gains[:period])
-    avg_loss = np.mean(losses[:period])
-
-    for i in range(period, len(deltas)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-        if avg_loss == 0:
-            out[i + 1] = 100.0
-        else:
-            rs = avg_gain / avg_loss
-            out[i + 1] = 100.0 - 100.0 / (1.0 + rs)
-
-    return out
+    return _compute_rsi(closes, period)
 
 
 def _rolling_volatility(closes: np.ndarray, period: int = 20) -> np.ndarray:
@@ -154,12 +135,12 @@ class XGBoostTrendAlgorithm(Algorithm):
             ),
             asset_classes=["crypto", "equities"],
             timeframes=["1h", "4h", "1d"],
-            params={
-                "lookback": self._lookback,
-                "forecast_horizon": self._forecast_horizon,
-                "n_estimators": self._n_estimators,
-                "score_threshold": self._score_threshold,
-            },
+            params=[
+                AlgorithmParam("lookback", "int", self._lookback, min=20, max=200, description="History lookback bars"),
+                AlgorithmParam("forecast_horizon", "int", self._forecast_horizon, min=1, max=20, description="Bars ahead to predict"),
+                AlgorithmParam("n_estimators", "int", self._n_estimators, min=10, max=500, description="XGBoost trees"),
+                AlgorithmParam("score_threshold", "float", self._score_threshold, min=0.5, max=0.9, step=0.05, description="Min probability to emit signal"),
+            ],
             author="Daytrader built-in",
         )
 

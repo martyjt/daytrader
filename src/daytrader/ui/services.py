@@ -102,6 +102,7 @@ async def run_backtest_service(
     capital: float = 10_000.0,
     venue: str = "binance_spot",
     risk_enabled: bool = False,
+    algo_params: dict[str, Any] | None = None,
 ) -> Any:
     """Run a backtest and return the result.
 
@@ -134,6 +135,7 @@ async def run_backtest_service(
         initial_capital=capital,
         venue=venue,
         risk_config=risk_config,
+        params=algo_params,
     )
 
 
@@ -148,6 +150,7 @@ async def run_walk_forward_service(
     venue: str = "binance_spot",
     n_folds: int = 5,
     risk_enabled: bool = False,
+    algo_params: dict[str, Any] | None = None,
 ) -> Any:
     """Run walk-forward analysis and return the result."""
     from datetime import datetime as dt

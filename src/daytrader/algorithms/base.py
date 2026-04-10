@@ -17,6 +17,20 @@ from ..core.types.signals import Signal
 
 
 @dataclass(frozen=True)
+class AlgorithmParam:
+    """Typed parameter declaration for auto-generated UI forms."""
+
+    name: str
+    type: str = "float"  # "int" | "float" | "bool" | "str"
+    default: Any = 0
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    description: str = ""
+    choices: list[Any] | None = None
+
+
+@dataclass(frozen=True)
 class AlgorithmManifest:
     """Metadata describing an algorithm plugin."""
 
@@ -28,8 +42,12 @@ class AlgorithmManifest:
         default_factory=lambda: ["crypto", "equities"]
     )
     timeframes: list[str] = field(default_factory=lambda: ["1d"])
-    params: dict[str, Any] = field(default_factory=dict)
+    params: list[AlgorithmParam] = field(default_factory=list)
     author: str = ""
+
+    def param_defaults(self) -> dict[str, Any]:
+        """Return a dict of parameter names to their default values."""
+        return {p.name: p.default for p in self.params}
 
 
 class Algorithm(ABC):

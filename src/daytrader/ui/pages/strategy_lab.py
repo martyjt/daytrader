@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from nicegui import ui
 
+from ..components.param_form import render_param_form
 from ..shell import page_layout
 
 
@@ -25,6 +26,7 @@ async def strategy_lab_page() -> None:
         "gate_results": [],
         "ritual_step": "configure",
     }
+    param_values: dict = {}
 
     # ---- Ritual banner ------------------------------------------------------
     ritual_badges: dict[str, ui.badge] = {}
@@ -98,6 +100,18 @@ async def strategy_lab_page() -> None:
         with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
             risk_toggle = ui.switch("Enable Risk Layers (SL/TP)", value=False)
 
+        # ---- Dynamic parameter form -----------------------------------------
+        param_container = ui.column().classes("w-full q-pt-xs")
+
+        def _on_algo_change(_):
+            param_values.clear()
+            render_param_form(algo.value, param_container, param_values)
+
+        algo.on_value_change(_on_algo_change)
+        # Render initial form
+        if algo.value:
+            render_param_form(algo.value, param_container, param_values)
+
         # Show selected venue's fee breakdown
         venue_info = ui.label("").classes("text-caption text-grey-6 q-pt-xs")
 
@@ -152,6 +166,7 @@ async def strategy_lab_page() -> None:
                 capital=float(capital.value or 10000),
                 venue=venue.value,
                 risk_enabled=risk_toggle.value,
+                algo_params=dict(param_values) if param_values else None,
             )
         except Exception as exc:
             results.clear()
@@ -315,6 +330,7 @@ async def strategy_lab_page() -> None:
                 capital=float(capital.value or 10000),
                 venue=venue.value,
                 risk_enabled=risk_toggle.value,
+                algo_params=dict(param_values) if param_values else None,
             )
         except Exception as exc:
             wf_results.clear()
