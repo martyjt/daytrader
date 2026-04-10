@@ -100,10 +100,12 @@ async def run_backtest_service(
     start_str: str,
     end_str: str,
     capital: float = 10_000.0,
+    venue: str = "binance_spot",
 ) -> Any:
     """Run a backtest and return the result.
 
-    Returns a ``BacktestResult`` with equity_curve, trades, signals, kpis.
+    Returns a ``BacktestResult`` with equity_curve, trades, signals, kpis,
+    total_fees_paid, and venue-specific fee modeling.
     """
     from datetime import datetime as dt
 
@@ -126,4 +128,5 @@ async def run_backtest_service(
         start=start,
         end=end,
         initial_capital=capital,
+        venue=venue,
     )

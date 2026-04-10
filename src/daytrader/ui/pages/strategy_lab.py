@@ -3,9 +3,8 @@
 The Ritual lives here:
     Idea → Configure → Backtest → Walk-forward → Paper → Promote → Live
 
-Phase 0: form-based algo selection, symbol/timeframe/dates, Run
-Backtest with real yfinance data + real backtest engine, real KPIs
-and equity curve.
+Phase 1: venue-specific fee modeling with gross vs net return breakdown,
+fee drag tracking, and trade frequency warnings.
 """
 
 from __future__ import annotations
@@ -38,13 +37,15 @@ async def strategy_lab_page() -> None:
                     "outline" if not active else ""
                 )
 
-    # ---- Algorithm list from registry ------------------------------------
+    # ---- Algorithm + venue lists from registries -------------------------
     from ...algorithms.registry import AlgorithmRegistry
+    from ...backtest.fees import VENUE_PROFILES
 
     algo_ids = AlgorithmRegistry.available()
     algo_labels = {
         aid: AlgorithmRegistry.get(aid).manifest.name for aid in algo_ids
     }
+    venue_labels = {k: v.venue for k, v in VENUE_PROFILES.items()}
 
     # ---- Configuration form ----------------------------------------------
     with ui.card().classes("w-full"):
@@ -67,6 +68,28 @@ async def strategy_lab_page() -> None:
             start_date = ui.input("Start Date", value="2024-01-01")
             end_date = ui.input("End Date", value="2024-12-31")
             capital = ui.number("Capital ($)", value=10000, min=1)
+            venue = ui.select(
+                options=venue_labels,
+                value="binance_spot",
+                label="Venue / Fee Profile",
+            ).classes("min-w-[200px]")
+
+        # Show selected venue's fee breakdown
+        venue_info = ui.label("").classes("text-caption text-grey-6 q-pt-xs")
+
+        def _update_venue_info():
+            v = venue.value
+            if v and v in VENUE_PROFILES:
+                s = VENUE_PROFILES[v]
+                venue_info.text = (
+                    f"Fees: {s.maker_bps}/{s.taker_bps} bps maker/taker · "
+                    f"Spread: ~{s.spread_bps} bps · "
+                    f"Slippage: ~{s.slippage_base_bps} bps ({s.slippage_model}) · "
+                    f"Est. round-trip: ~{s.total_round_trip_bps:.0f} bps"
+                )
+
+        venue.on_value_change(lambda _: _update_venue_info())
+        _update_venue_info()
 
     # ---- Results area ----------------------------------------------------
     results = ui.column().classes("w-full q-pt-md")
@@ -90,6 +113,7 @@ async def strategy_lab_page() -> None:
                 start_str=start_date.value,
                 end_str=end_date.value,
                 capital=float(capital.value or 10000),
+                venue=venue.value,
             )
         except Exception as exc:
             results.clear()
@@ -104,16 +128,33 @@ async def strategy_lab_page() -> None:
         with results:
             kpis = result.kpis
 
-            # ---- KPI cards -----------------------------------------------
-            ui.label("Backtest Results").classes("text-h6 q-pb-sm")
+            # ---- Return comparison: gross vs net -------------------------
+            ui.label("Backtest Results").classes("text-h6 q-pb-xs")
+            ui.label(
+                f"Venue: {result.venue} · "
+                f"Fees paid: ${result.total_fees_paid:,.2f} · "
+                f"Fee drag: {kpis.get('fee_drag_pct', 0):.2f}%"
+            ).classes("text-body2 text-grey-5 q-pb-sm")
 
-            with ui.row().classes("gap-4 q-pb-md flex-wrap"):
+            # ---- KPI cards -----------------------------------------------
+            net_ret = kpis.get("net_return_pct", 0)
+            gross_ret = kpis.get("gross_return_pct", 0)
+
+            with ui.row().classes("gap-3 q-pb-md flex-wrap"):
                 _kpi_card(
-                    "Total Return",
-                    f"{kpis.get('total_return_pct', 0):+.2f}%",
-                    color="positive"
-                    if kpis.get("total_return_pct", 0) >= 0
-                    else "negative",
+                    "Gross Return",
+                    f"{gross_ret:+.2f}%",
+                    color="grey-5",
+                )
+                _kpi_card(
+                    "Net Return",
+                    f"{net_ret:+.2f}%",
+                    color="positive" if net_ret >= 0 else "negative",
+                )
+                _kpi_card(
+                    "Fee Drag",
+                    f"-{kpis.get('fee_drag_pct', 0):.2f}%",
+                    color="warning" if kpis.get("fee_drag_pct", 0) > 1 else "grey-5",
                 )
                 _kpi_card("Sharpe", f"{kpis.get('sharpe_ratio', 0):.2f}")
                 _kpi_card(
@@ -125,16 +166,26 @@ async def strategy_lab_page() -> None:
                 )
                 _kpi_card("Trades", str(kpis.get("num_trades", 0)))
                 _kpi_card(
-                    "Win Rate",
-                    f"{kpis.get('win_rate_pct', 0):.1f}%",
-                )
-                _kpi_card(
                     "Final Equity",
                     f"${result.final_equity:,.2f}",
                     color="positive"
                     if result.final_equity >= result.initial_capital
                     else "negative",
                 )
+
+            # ---- Trade frequency warning ---------------------------------
+            atpd = kpis.get("avg_trades_per_day", 0)
+            if atpd > 2:
+                with ui.card().classes("w-full q-pa-sm").style(
+                    "background-color: #3d2e00"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("warning", color="warning")
+                        ui.label(
+                            f"High trade frequency: {atpd:.1f} trades/day. "
+                            f"At {result.venue} fee rates, this strategy needs "
+                            f"significant daily alpha to overcome fee drag."
+                        ).classes("text-body2 text-warning")
 
             # ---- Equity curve (ECharts) -----------------------------------
             eq = result.equity_curve
@@ -177,12 +228,12 @@ async def strategy_lab_page() -> None:
                     }
                 ).classes("w-full").style("height: 420px")
 
-            # ---- Signals summary -----------------------------------------
+            # ---- Summary line --------------------------------------------
             n_signals = len(result.signals)
             n_trades = kpis.get("num_trades", 0)
             ui.label(
-                f"{n_signals} signals emitted · {n_trades} trades executed · "
-                f"{len(eq)} bars processed"
+                f"{n_signals} signals · {n_trades} trades · "
+                f"{len(eq)} bars · ${result.total_fees_paid:,.2f} in fees"
             ).classes("text-caption text-grey-6 q-pt-sm")
 
     with ui.row().classes("q-pt-md"):
@@ -192,6 +243,6 @@ async def strategy_lab_page() -> None:
 
 
 def _kpi_card(label: str, value: str, *, color: str = "primary") -> None:
-    with ui.card().classes("q-pa-sm min-w-[120px]"):
+    with ui.card().classes("q-pa-sm min-w-[110px]"):
         ui.label(label).classes("text-caption text-grey-6")
         ui.label(value).classes(f"text-h6 text-weight-bold text-{color}")
