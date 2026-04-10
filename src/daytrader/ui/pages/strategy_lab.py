@@ -1,10 +1,10 @@
 """Strategy Lab — 'Build an algo, prove it, promote it.'
 
 The Ritual lives here:
-    Idea → Configure → Backtest → Walk-forward → Paper → Promote → Live
+    Idea -> Configure -> Backtest -> Walk-forward -> Paper -> Promote -> Live
 
-Phase 1: venue-specific fee modeling with gross vs net return breakdown,
-fee drag tracking, and trade frequency warnings.
+Phase 1: walk-forward testing, promotion gates, risk layers,
+venue-specific fee modeling with gross vs net return breakdown.
 """
 
 from __future__ import annotations
@@ -18,26 +18,47 @@ from ..shell import page_layout
 async def strategy_lab_page() -> None:
     page_layout("Strategy Lab")
 
-    # ---- Ritual banner ---------------------------------------------------
+    # ---- shared state -------------------------------------------------------
+    _state: dict = {
+        "backtest_result": None,
+        "wf_result": None,
+        "gate_results": [],
+        "ritual_step": "configure",
+    }
+
+    # ---- Ritual banner ------------------------------------------------------
+    ritual_badges: dict[str, ui.badge] = {}
+
     with ui.card().classes("w-full bg-dark q-mb-md"):
         ui.label(
-            "The Ritual:  Idea → Configure → Backtest → Walk-forward "
-            "→ Paper → Promote → Live"
+            "The Ritual:  Idea -> Configure -> Backtest -> Walk-forward "
+            "-> Paper -> Promote -> Live"
         ).classes("text-subtitle2 text-grey-5")
         with ui.row().classes("gap-2 q-pt-xs"):
-            for step, active in [
-                ("Configure", True),
-                ("Backtest", False),
-                ("Walk-forward", False),
-                ("Paper", False),
-                ("Promote", False),
-            ]:
+            for step in ["Configure", "Backtest", "Walk-forward", "Paper", "Promote"]:
+                active = step == "Configure"
                 color = "primary" if active else "grey-8"
-                ui.badge(step, color=color).props(
+                b = ui.badge(step, color=color).props(
                     "outline" if not active else ""
                 )
+                ritual_badges[step.lower()] = b
 
-    # ---- Algorithm + venue lists from registries -------------------------
+    def _update_ritual_step(step: str) -> None:
+        _state["ritual_step"] = step
+        step_order = ["configure", "backtest", "walk-forward", "paper", "promote"]
+        current_idx = step_order.index(step) if step in step_order else 0
+        for i, s in enumerate(step_order):
+            badge = ritual_badges.get(s)
+            if badge:
+                if i <= current_idx:
+                    badge.props(remove="outline")
+                    badge._props["color"] = "primary"
+                else:
+                    badge.props("outline")
+                    badge._props["color"] = "grey-8"
+                badge.update()
+
+    # ---- Algorithm + venue lists from registries ----------------------------
     from ...algorithms.registry import AlgorithmRegistry
     from ...backtest.fees import VENUE_PROFILES
 
@@ -47,7 +68,7 @@ async def strategy_lab_page() -> None:
     }
     venue_labels = {k: v.venue for k, v in VENUE_PROFILES.items()}
 
-    # ---- Configuration form ----------------------------------------------
+    # ---- Configuration form -------------------------------------------------
     with ui.card().classes("w-full"):
         ui.label("Configure").classes("text-h6 q-pb-sm")
 
@@ -74,6 +95,9 @@ async def strategy_lab_page() -> None:
                 label="Venue / Fee Profile",
             ).classes("min-w-[200px]")
 
+        with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
+            risk_toggle = ui.switch("Enable Risk Layers (SL/TP)", value=False)
+
         # Show selected venue's fee breakdown
         venue_info = ui.label("").classes("text-caption text-grey-6 q-pt-xs")
 
@@ -91,11 +115,24 @@ async def strategy_lab_page() -> None:
         venue.on_value_change(lambda _: _update_venue_info())
         _update_venue_info()
 
-    # ---- Results area ----------------------------------------------------
+    # ---- Results area -------------------------------------------------------
     results = ui.column().classes("w-full q-pt-md")
 
+    # ---- Walk-forward results area ------------------------------------------
+    wf_results = ui.column().classes("w-full")
+
+    # ---- Gates area ---------------------------------------------------------
+    gates_area = ui.column().classes("w-full")
+
+    # ---- Backtest handler ---------------------------------------------------
     async def run_backtest() -> None:
+        _state["backtest_result"] = None
+        _state["wf_result"] = None
+        _state["gate_results"] = []
+        wf_results.clear()
+        gates_area.clear()
         results.clear()
+
         with results:
             with ui.row().classes("items-center gap-2"):
                 ui.spinner(size="lg")
@@ -114,6 +151,7 @@ async def strategy_lab_page() -> None:
                 end_str=end_date.value,
                 capital=float(capital.value or 10000),
                 venue=venue.value,
+                risk_enabled=risk_toggle.value,
             )
         except Exception as exc:
             results.clear()
@@ -124,11 +162,16 @@ async def strategy_lab_page() -> None:
                 )
             return
 
+        _state["backtest_result"] = result
+        _update_ritual_step("backtest")
+        _render_backtest_results(result)
+
+    def _render_backtest_results(result) -> None:
         results.clear()
         with results:
             kpis = result.kpis
 
-            # ---- Return comparison: gross vs net -------------------------
+            # ---- Return comparison: gross vs net ----------------------------
             ui.label("Backtest Results").classes("text-h6 q-pb-xs")
             ui.label(
                 f"Venue: {result.venue} · "
@@ -136,7 +179,7 @@ async def strategy_lab_page() -> None:
                 f"Fee drag: {kpis.get('fee_drag_pct', 0):.2f}%"
             ).classes("text-body2 text-grey-5 q-pb-sm")
 
-            # ---- KPI cards -----------------------------------------------
+            # ---- KPI cards --------------------------------------------------
             net_ret = kpis.get("net_return_pct", 0)
             gross_ret = kpis.get("gross_return_pct", 0)
 
@@ -173,7 +216,17 @@ async def strategy_lab_page() -> None:
                     else "negative",
                 )
 
-            # ---- Trade frequency warning ---------------------------------
+            # ---- Risk events summary ----------------------------------------
+            if result.risk_events:
+                sl_count = sum(1 for e in result.risk_events if e["type"] == "stop_loss")
+                tp_count = sum(1 for e in result.risk_events if e["type"] == "take_profit")
+                with ui.row().classes("gap-2 q-pb-sm"):
+                    if sl_count:
+                        ui.badge(f"Stop-Loss: {sl_count}x", color="negative")
+                    if tp_count:
+                        ui.badge(f"Take-Profit: {tp_count}x", color="positive")
+
+            # ---- Trade frequency warning ------------------------------------
             atpd = kpis.get("avg_trades_per_day", 0)
             if atpd > 2:
                 with ui.card().classes("w-full q-pa-sm").style(
@@ -187,7 +240,7 @@ async def strategy_lab_page() -> None:
                             f"significant daily alpha to overcome fee drag."
                         ).classes("text-body2 text-warning")
 
-            # ---- Equity curve (ECharts) -----------------------------------
+            # ---- Equity curve (ECharts) -------------------------------------
             eq = result.equity_curve
             if eq:
                 ui.echart(
@@ -228,7 +281,7 @@ async def strategy_lab_page() -> None:
                     }
                 ).classes("w-full").style("height: 420px")
 
-            # ---- Summary line --------------------------------------------
+            # ---- Summary line -----------------------------------------------
             n_signals = len(result.signals)
             n_trades = kpis.get("num_trades", 0)
             ui.label(
@@ -236,10 +289,225 @@ async def strategy_lab_page() -> None:
                 f"{len(eq)} bars · ${result.total_fees_paid:,.2f} in fees"
             ).classes("text-caption text-grey-6 q-pt-sm")
 
-    with ui.row().classes("q-pt-md"):
+    # ---- Walk-forward handler -----------------------------------------------
+    async def run_walk_forward() -> None:
+        if _state["backtest_result"] is None:
+            ui.notify("Run a backtest first", type="warning")
+            return
+
+        wf_results.clear()
+        with wf_results:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner(size="lg")
+                ui.label("Running walk-forward analysis (5 folds)...").classes(
+                    "text-grey-5"
+                )
+
+        try:
+            from ..services import run_walk_forward_service
+
+            wf = await run_walk_forward_service(
+                algo_id=algo.value,
+                symbol_str=symbol.value,
+                timeframe_str=timeframe.value,
+                start_str=start_date.value,
+                end_str=end_date.value,
+                capital=float(capital.value or 10000),
+                venue=venue.value,
+                risk_enabled=risk_toggle.value,
+            )
+        except Exception as exc:
+            wf_results.clear()
+            with wf_results:
+                ui.icon("error", size="lg", color="negative")
+                ui.label(f"Walk-forward failed: {exc}").classes(
+                    "text-negative text-body1"
+                )
+            return
+
+        _state["wf_result"] = wf
+        _update_ritual_step("walk-forward")
+        _render_wf_results(wf)
+        _evaluate_and_render_gates()
+
+    def _render_wf_results(wf) -> None:
+        wf_results.clear()
+        with wf_results:
+            ui.separator().classes("q-my-md")
+            ui.label("Walk-Forward Results").classes("text-h6 q-pb-xs")
+
+            # Aggregate OOS metrics
+            with ui.row().classes("gap-3 q-pb-md flex-wrap"):
+                _kpi_card(
+                    "OOS Sharpe",
+                    f"{wf.aggregate_oos_sharpe:.2f}",
+                    color="positive" if wf.aggregate_oos_sharpe >= 0.3 else "warning",
+                )
+                _kpi_card(
+                    "OOS Return",
+                    f"{wf.aggregate_oos_return_pct:+.2f}%",
+                    color="positive" if wf.aggregate_oos_return_pct >= 0 else "negative",
+                )
+                _kpi_card(
+                    "OOS Max DD",
+                    f"{wf.aggregate_oos_max_drawdown_pct:.2f}%",
+                    color="negative"
+                    if wf.aggregate_oos_max_drawdown_pct < -5
+                    else "warning",
+                )
+                _kpi_card("Folds", str(len(wf.folds)))
+
+            # Per-fold table
+            columns = [
+                {"name": "fold", "label": "Fold", "field": "fold"},
+                {"name": "train", "label": "Train Period", "field": "train"},
+                {"name": "test", "label": "Test Period", "field": "test"},
+                {"name": "oos_sharpe", "label": "OOS Sharpe", "field": "oos_sharpe"},
+                {"name": "oos_return", "label": "OOS Return", "field": "oos_return"},
+            ]
+            rows = [
+                {
+                    "fold": f.fold_index + 1,
+                    "train": f"{str(f.train_start)[:10]} -> {str(f.train_end)[:10]}",
+                    "test": f"{str(f.test_start)[:10]} -> {str(f.test_end)[:10]}",
+                    "oos_sharpe": f"{f.oos_sharpe:.2f}",
+                    "oos_return": f"{f.oos_return_pct:+.2f}%",
+                }
+                for f in wf.folds
+            ]
+            ui.aggrid(
+                {
+                    "columnDefs": columns,
+                    "rowData": rows,
+                    "domLayout": "autoHeight",
+                }
+            ).classes("w-full")
+
+            # OOS equity curve
+            if wf.oos_equity_curve:
+                ui.echart(
+                    {
+                        "backgroundColor": "transparent",
+                        "tooltip": {"trigger": "axis"},
+                        "xAxis": {
+                            "type": "category",
+                            "data": list(range(len(wf.oos_equity_curve))),
+                            "name": "OOS Bar",
+                            "axisLabel": {"color": "#999"},
+                        },
+                        "yAxis": {
+                            "type": "value",
+                            "name": "OOS Equity ($)",
+                            "axisLabel": {"color": "#999"},
+                        },
+                        "series": [
+                            {
+                                "data": [round(v, 2) for v in wf.oos_equity_curve],
+                                "type": "line",
+                                "smooth": True,
+                                "showSymbol": False,
+                                "areaStyle": {"opacity": 0.15},
+                                "lineStyle": {"color": "#22b8cf"},
+                                "itemStyle": {"color": "#22b8cf"},
+                            }
+                        ],
+                        "grid": {
+                            "left": "10%",
+                            "right": "4%",
+                            "top": "10%",
+                            "bottom": "15%",
+                        },
+                    }
+                ).classes("w-full").style("height: 300px")
+
+    # ---- Gate evaluation ----------------------------------------------------
+    def _evaluate_and_render_gates() -> None:
+        from ..services import evaluate_gates_service
+
+        gate_results = evaluate_gates_service(
+            backtest_result=_state["backtest_result"],
+            walk_forward_result=_state["wf_result"],
+        )
+        _state["gate_results"] = gate_results
+        _render_gates(gate_results)
+
+    def _render_gates(gate_results) -> None:
+        gates_area.clear()
+        with gates_area:
+            ui.separator().classes("q-my-md")
+            ui.label("Promotion Gates").classes("text-h6 q-pb-xs")
+
+            all_pass = all(g.overall_pass for g in gate_results)
+
+            with ui.row().classes("gap-3 q-pb-md flex-wrap"):
+                for gate_result in gate_results:
+                    for check in gate_result.checks:
+                        color = "positive" if check.passed else "negative"
+                        icon = "check_circle" if check.passed else "cancel"
+                        with ui.card().classes("q-pa-sm min-w-[140px]"):
+                            with ui.row().classes("items-center gap-1"):
+                                ui.icon(icon, color=color, size="sm")
+                                ui.label(check.gate_name.replace("_", " ").title()).classes(
+                                    "text-caption text-grey-6"
+                                )
+                            ui.label(
+                                f"{check.actual_value:.2f} / {check.required_value:.1f}"
+                            ).classes(f"text-body1 text-weight-bold text-{color}")
+
+            # Overall verdict
+            if all_pass:
+                with ui.card().classes("w-full q-pa-sm").style(
+                    "background-color: #1a3a1a"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("verified", color="positive", size="md")
+                        ui.label(
+                            "All gates passed! This strategy is eligible "
+                            "for promotion to paper trading."
+                        ).classes("text-body1 text-positive")
+            else:
+                failed = []
+                for g in gate_results:
+                    failed.extend(g.failed_checks)
+                with ui.card().classes("w-full q-pa-sm").style(
+                    "background-color: #3a1a1a"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("block", color="negative", size="md")
+                        ui.label(
+                            f"{len(failed)} gate(s) failed. Strategy does not "
+                            "qualify for promotion yet."
+                        ).classes("text-body1 text-negative")
+
+            # Promote button (only when all pass)
+            if all_pass:
+                async def _promote() -> None:
+                    from ..services import promote_to_paper
+
+                    bt = _state["backtest_result"]
+                    if bt:
+                        ui.notify(
+                            "Strategy promoted to paper trading!",
+                            type="positive",
+                            position="top",
+                        )
+                        _update_ritual_step("paper")
+
+                ui.button(
+                    "Promote to Paper Trading",
+                    icon="rocket_launch",
+                    on_click=_promote,
+                ).props("color=positive unelevated size=lg").classes("q-mt-sm")
+
+    # ---- Action buttons -----------------------------------------------------
+    with ui.row().classes("q-pt-md gap-2"):
         ui.button(
             "Run Backtest", icon="play_arrow", on_click=run_backtest
         ).props("color=primary unelevated size=lg")
+
+        ui.button(
+            "Run Walk-Forward", icon="trending_up", on_click=run_walk_forward
+        ).props("color=secondary unelevated size=lg")
 
 
 def _kpi_card(label: str, value: str, *, color: str = "primary") -> None:

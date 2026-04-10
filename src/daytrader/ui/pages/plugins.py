@@ -20,7 +20,6 @@ _COMING_SOON = [
     ("VWAP Reversion", "Intraday mean reversion to anchored VWAP"),
     ("Stochastic Oscillator", "Short-term overbought/oversold oscillator"),
     ("ATR Chandelier Exit", "Dynamic trailing stop based on ATR"),
-    ("XGBoost Trend", "ML: next-bar direction classifier on TA features"),
 ]
 
 

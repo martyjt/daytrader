@@ -39,6 +39,14 @@ class AlgorithmRegistry:
         if "buy_hold" not in cls._algorithms:
             cls.register(BuyHoldAlgorithm())
 
+        if "xgboost_trend" not in cls._algorithms:
+            try:
+                from .builtin.xgboost_trend import XGBoostTrendAlgorithm
+
+                cls.register(XGBoostTrendAlgorithm())
+            except ImportError:
+                pass  # xgboost not installed
+
     @classmethod
     def clear(cls) -> None:
         cls._algorithms.clear()

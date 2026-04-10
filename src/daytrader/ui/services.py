@@ -101,6 +101,7 @@ async def run_backtest_service(
     end_str: str,
     capital: float = 10_000.0,
     venue: str = "binance_spot",
+    risk_enabled: bool = False,
 ) -> Any:
     """Run a backtest and return the result.
 
@@ -111,6 +112,7 @@ async def run_backtest_service(
 
     from ..algorithms.registry import AlgorithmRegistry
     from ..backtest.engine import BacktestEngine
+    from ..backtest.risk import RiskConfig
     from ..core.types.bars import Timeframe
     from ..core.types.symbols import Symbol
 
@@ -119,6 +121,8 @@ async def run_backtest_service(
     timeframe = Timeframe(timeframe_str)
     start = dt.strptime(start_str, "%Y-%m-%d")
     end = dt.strptime(end_str, "%Y-%m-%d")
+
+    risk_config = RiskConfig.from_yaml() if risk_enabled else RiskConfig.disabled()
 
     engine = BacktestEngine()
     return await engine.run(
@@ -129,4 +133,72 @@ async def run_backtest_service(
         end=end,
         initial_capital=capital,
         venue=venue,
+        risk_config=risk_config,
     )
+
+
+async def run_walk_forward_service(
+    *,
+    algo_id: str,
+    symbol_str: str,
+    timeframe_str: str,
+    start_str: str,
+    end_str: str,
+    capital: float = 10_000.0,
+    venue: str = "binance_spot",
+    n_folds: int = 5,
+    risk_enabled: bool = False,
+) -> Any:
+    """Run walk-forward analysis and return the result."""
+    from datetime import datetime as dt
+
+    from ..algorithms.registry import AlgorithmRegistry
+    from ..backtest.walk_forward import WalkForwardConfig, WalkForwardEngine
+    from ..backtest.risk import RiskConfig
+    from ..core.types.bars import Timeframe
+    from ..core.types.symbols import Symbol
+    from ..data.adapters.registry import AdapterRegistry
+
+    algorithm = AlgorithmRegistry.get(algo_id)
+    symbol = Symbol.parse(symbol_str)
+    timeframe = Timeframe(timeframe_str)
+    start = dt.strptime(start_str, "%Y-%m-%d")
+    end = dt.strptime(end_str, "%Y-%m-%d")
+
+    AdapterRegistry.auto_register()
+    adapter = AdapterRegistry.get("yfinance")
+    data = await adapter.fetch_ohlcv(symbol, timeframe, start, end)
+
+    risk_config = RiskConfig.from_yaml() if risk_enabled else RiskConfig.disabled()
+
+    config = WalkForwardConfig(n_folds=n_folds)
+    engine = WalkForwardEngine()
+    return await engine.run(
+        algorithm=algorithm,
+        symbol=symbol,
+        timeframe=timeframe,
+        data=data,
+        config=config,
+        initial_capital=capital,
+        venue=venue,
+        risk_config=risk_config,
+    )
+
+
+def evaluate_gates_service(
+    *,
+    backtest_result: Any = None,
+    walk_forward_result: Any = None,
+) -> list[Any]:
+    """Evaluate all applicable promotion gates. Returns list of GateResults."""
+    from ..core.gates import GateEvaluator
+
+    evaluator = GateEvaluator()
+    results = []
+
+    if backtest_result is not None:
+        results.append(evaluator.evaluate_backtest(backtest_result))
+    if walk_forward_result is not None:
+        results.append(evaluator.evaluate_walk_forward(walk_forward_result))
+
+    return results

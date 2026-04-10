@@ -26,6 +26,7 @@ from ..core.types.bars import Bar, Timeframe
 from ..core.types.signals import Signal
 from ..core.types.symbols import Symbol
 from .fees import FeeModel, FeeSchedule, VENUE_PROFILES
+from .risk import RiskConfig, compute_atr, check_stop_loss, check_take_profit, stop_loss_price, take_profit_price, DailyPnLTracker
 
 
 @dataclass
@@ -41,6 +42,8 @@ class BacktestResult:
     final_equity: float
     total_fees_paid: float = 0.0
     venue: str = "custom"
+    debug_logs: list[dict[str, Any]] = field(default_factory=list)
+    risk_events: list[dict[str, Any]] = field(default_factory=list)
 
 
 class BacktestEngine:
@@ -79,6 +82,7 @@ class BacktestEngine:
         fee_model: FeeModel | None = None,
         data: pl.DataFrame | None = None,
         adapter: Any = None,
+        risk_config: RiskConfig | None = None,
     ) -> BacktestResult:
         """Execute a backtest.
 
@@ -120,6 +124,7 @@ class BacktestEngine:
         return self._simulate(
             algorithm, symbol, timeframe, data,
             initial_capital, fee_model, resolved_venue,
+            risk_config=risk_config,
         )
 
     def _simulate(
@@ -131,7 +136,12 @@ class BacktestEngine:
         initial_capital: float,
         fee_model: FeeModel,
         venue: str,
+        *,
+        risk_config: RiskConfig | None = None,
     ) -> BacktestResult:
+        if risk_config is None:
+            risk_config = RiskConfig.disabled()
+
         closes = data["close"].to_numpy().astype(float)
         opens = data["open"].to_numpy().astype(float)
         highs = data["high"].to_numpy().astype(float)
@@ -145,10 +155,16 @@ class BacktestEngine:
         cash = initial_capital
         position_qty = 0.0
         entry_price = 0.0
+        entry_bar = 0
         equity_curve: list[float] = []
         trades: list[dict[str, Any]] = []
         all_signals: list[Signal] = []
         total_fees = 0.0
+        debug_logs: list[dict[str, Any]] = []
+        risk_events: list[dict[str, Any]] = []
+
+        # Risk layer 2: daily P&L tracker
+        daily_tracker = DailyPnLTracker(initial_capital, risk_config.daily_loss_limit_pct)
 
         tenant_id = uuid4()
         persona_id = uuid4()
@@ -168,6 +184,115 @@ class BacktestEngine:
             if i >= 14 and current_price > 0:
                 recent_returns = np.diff(closes[max(0, i - 14) : i + 1]) / closes[max(0, i - 14) : i]
                 vol_pct = float(np.std(recent_returns) * 100) if len(recent_returns) > 1 else 0.0
+
+            # --- Risk Layer 1: per-trade SL/TP/max-hold checks ---
+            risk_exit = False
+            if risk_config.enabled and position_qty > 0:
+                atr = compute_atr(
+                    highs[: i + 1], lows[: i + 1], closes[: i + 1],
+                    period=risk_config.atr_period,
+                )
+
+                if atr > 0:
+                    # Stop-loss check
+                    if check_stop_loss(lows[i], entry_price, atr, risk_config.stop_loss_atr_mult):
+                        exit_price = stop_loss_price(entry_price, atr, risk_config.stop_loss_atr_mult)
+                        exit_price = max(exit_price, lows[i])  # can't fill below bar low
+                        sale = position_qty * exit_price
+                        fee = fee_model.trade_cost(sale, volatility_pct=vol_pct)
+                        total_fees += fee
+                        cash = sale - fee
+                        event = {
+                            "bar": i, "timestamp": str(timestamps[i]),
+                            "type": "stop_loss", "exit_price": round(exit_price, 4),
+                            "entry_price": round(entry_price, 4), "atr": round(atr, 4),
+                        }
+                        risk_events.append(event)
+                        trades.append({
+                            "bar": i, "timestamp": str(timestamps[i]),
+                            "action": "sell", "price": exit_price,
+                            "quantity": position_qty,
+                            "pnl": cash - initial_capital,
+                            "fee": round(fee, 4),
+                            "exit_reason": "stop_loss",
+                        })
+                        position_qty = 0.0
+                        risk_exit = True
+
+                    # Take-profit check
+                    elif check_take_profit(highs[i], entry_price, atr, risk_config.take_profit_atr_mult):
+                        exit_price = take_profit_price(entry_price, atr, risk_config.take_profit_atr_mult)
+                        exit_price = min(exit_price, highs[i])  # can't fill above bar high
+                        sale = position_qty * exit_price
+                        fee = fee_model.trade_cost(sale, volatility_pct=vol_pct)
+                        total_fees += fee
+                        cash = sale - fee
+                        event = {
+                            "bar": i, "timestamp": str(timestamps[i]),
+                            "type": "take_profit", "exit_price": round(exit_price, 4),
+                            "entry_price": round(entry_price, 4), "atr": round(atr, 4),
+                        }
+                        risk_events.append(event)
+                        trades.append({
+                            "bar": i, "timestamp": str(timestamps[i]),
+                            "action": "sell", "price": exit_price,
+                            "quantity": position_qty,
+                            "pnl": cash - initial_capital,
+                            "fee": round(fee, 4),
+                            "exit_reason": "take_profit",
+                        })
+                        position_qty = 0.0
+                        risk_exit = True
+
+                # Max hold bars check
+                if not risk_exit and (i - entry_bar) >= risk_config.max_hold_bars:
+                    sale = position_qty * current_price
+                    fee = fee_model.trade_cost(sale, volatility_pct=vol_pct)
+                    total_fees += fee
+                    cash = sale - fee
+                    event = {
+                        "bar": i, "timestamp": str(timestamps[i]),
+                        "type": "max_hold", "bars_held": i - entry_bar,
+                    }
+                    risk_events.append(event)
+                    trades.append({
+                        "bar": i, "timestamp": str(timestamps[i]),
+                        "action": "sell", "price": current_price,
+                        "quantity": position_qty,
+                        "pnl": cash - initial_capital,
+                        "fee": round(fee, 4),
+                        "exit_reason": "max_hold",
+                    })
+                    position_qty = 0.0
+                    risk_exit = True
+
+            # --- Risk Layer 2: daily loss limit ---
+            daily_halted = False
+            if risk_config.enabled:
+                equity = cash + position_qty * current_price
+                daily_halted = daily_tracker.update(equity, timestamps[i])
+                if daily_halted and not risk_exit:
+                    # Force-close any open position
+                    if position_qty > 0:
+                        sale = position_qty * current_price
+                        fee = fee_model.trade_cost(sale, volatility_pct=vol_pct)
+                        total_fees += fee
+                        cash = sale - fee
+                        event = {
+                            "bar": i, "timestamp": str(timestamps[i]),
+                            "type": "daily_limit",
+                        }
+                        risk_events.append(event)
+                        trades.append({
+                            "bar": i, "timestamp": str(timestamps[i]),
+                            "action": "sell", "price": current_price,
+                            "quantity": position_qty,
+                            "pnl": cash - initial_capital,
+                            "fee": round(fee, 4),
+                            "exit_reason": "daily_limit",
+                        })
+                        position_qty = 0.0
+                        risk_exit = True
 
             # Build AlgorithmContext for this bar
             bar = Bar(
@@ -198,14 +323,16 @@ class BacktestEngine:
                 features={},
                 params={},
                 emit_fn=emitted.append,
-                log_fn=lambda msg, fields: None,
+                log_fn=lambda msg, fields, _i=i, _ts=timestamps[i]: debug_logs.append(
+                    {"bar": _i, "timestamp": str(_ts), "message": msg, **fields}
+                ),
             )
 
             algorithm.on_bar(ctx)
             all_signals.extend(emitted)
 
-            # Simple execution: first signal drives action
-            if emitted:
+            # Skip signal execution if risk exit already happened or daily halted
+            if not risk_exit and not daily_halted and emitted:
                 sig = emitted[0]
 
                 if sig.score > 0.5 and position_qty == 0:
@@ -217,6 +344,7 @@ class BacktestEngine:
                     investable = cash - fee
                     position_qty = investable / current_price
                     entry_price = current_price
+                    entry_bar = i
                     cash = 0.0
                     trades.append({
                         "bar": i,
@@ -266,6 +394,8 @@ class BacktestEngine:
             final_equity=final_equity,
             total_fees_paid=round(total_fees, 4),
             venue=venue,
+            debug_logs=debug_logs,
+            risk_events=risk_events,
         )
 
 
