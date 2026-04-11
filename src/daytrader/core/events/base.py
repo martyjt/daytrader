@@ -20,6 +20,8 @@ class EventType(StrEnum):
     POSITION_OPENED = "position_opened"
     POSITION_CLOSED = "position_closed"
     RISK_BREACH = "risk_breach"
+    KILL_SWITCH = "kill_switch"
+    MODE_CHANGE = "mode_change"
     SYSTEM = "system"
 
 

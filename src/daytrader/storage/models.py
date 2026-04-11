@@ -193,6 +193,27 @@ class OrderModel(TenantMixin, Base):
 
 
 # ---------------------------------------------------------------------------
+# Journal
+# ---------------------------------------------------------------------------
+
+
+class JournalEntryModel(TenantMixin, Base):
+    __tablename__ = "journal_entries"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    persona_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("personas.id"), index=True, default=None
+    )
+    event_type: Mapped[str] = mapped_column(String(50), index=True)
+    severity: Mapped[str] = mapped_column(String(20), default="info")
+    summary: Mapped[str] = mapped_column(String(500))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+# ---------------------------------------------------------------------------
 # Secrets
 # ---------------------------------------------------------------------------
 

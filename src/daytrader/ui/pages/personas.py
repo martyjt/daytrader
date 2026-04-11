@@ -36,7 +36,7 @@ async def personas_page() -> None:
                     )
             else:
                 for p in personas:
-                    persona_card(p, on_delete=refresh)
+                    persona_card(p, on_delete=refresh, on_refresh=refresh)
 
     async def open_create_dialog() -> None:
         with ui.dialog() as dlg, ui.card().classes("w-96"):

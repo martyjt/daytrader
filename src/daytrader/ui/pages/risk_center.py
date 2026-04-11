@@ -28,13 +28,24 @@ async def risk_center_page() -> None:
                     "every persona."
                 ).classes("text-body2 text-grey-5")
 
-            def _on_kill() -> None:
-                ui.notify(
-                    "KILL SWITCH ACTIVATED — all trading halted",
-                    type="warning",
-                    position="top",
-                    timeout=5000,
-                )
+            async def _on_kill() -> None:
+                from ..services import kill_all_trading
+
+                try:
+                    count = await kill_all_trading(reason="manual")
+                    ui.notify(
+                        f"KILL SWITCH ACTIVATED — {count} persona(s) halted",
+                        type="warning",
+                        position="top",
+                        timeout=5000,
+                    )
+                    ui.navigate.to("/risk")  # Refresh the page
+                except RuntimeError:
+                    ui.notify(
+                        "Kill switch not ready",
+                        type="negative",
+                        position="top",
+                    )
 
             ui.button("KILL ALL", color="negative", on_click=_on_kill).props(
                 "size=lg unelevated"

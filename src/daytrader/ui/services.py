@@ -188,6 +188,103 @@ async def run_walk_forward_service(
     )
 
 
+async def kill_all_trading(reason: str = "manual") -> int:
+    """Activate kill switch, pause all personas. Returns count paused."""
+    from ..execution.kill_switch import get_kill_switch
+
+    return await get_kill_switch().activate(_tenant_id(), reason)
+
+
+async def promote_to_live(
+    persona_id: UUID,
+    venue: str,
+) -> tuple[Any, Any]:
+    """Promote a persona from paper to live, enforcing paper gates.
+
+    Returns ``(persona, gate_result)``.
+    """
+    from ..core.gates import GateEvaluator
+    from ..core.types.common import utcnow
+    from ..journal.writer import JournalWriter
+    from ..storage.models import JournalEntryModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            repo = TenantRepository(session, PersonaModel)
+            persona = await repo.get(persona_id)
+            if persona is None:
+                raise ValueError(f"Persona {persona_id} not found")
+            if persona.mode != "paper":
+                raise ValueError(
+                    f"Persona must be in paper mode to promote (is {persona.mode})"
+                )
+
+            # Count trades from journal
+            journal_repo = TenantRepository(session, JournalEntryModel)
+            trade_entries = list(
+                await journal_repo.get_all(
+                    persona_id=persona_id, event_type="order_filled"
+                )
+            )
+            num_trades = len(trade_entries)
+
+            # Days active (handle both tz-aware and tz-naive datetimes)
+            now = utcnow()
+            created = persona.created_at
+            if created.tzinfo is None:
+                from datetime import timezone
+
+                created = created.replace(tzinfo=timezone.utc)
+            days_active = (now - created).days
+
+            # Evaluate gates
+            evaluator = GateEvaluator()
+            gate_result = evaluator.evaluate_paper(days_active, num_trades)
+
+            if gate_result.overall_pass:
+                meta = dict(persona.meta or {})
+                meta["venue"] = venue
+                await repo.update(
+                    persona_id, mode="live", meta=meta
+                )
+                await session.commit()
+
+                writer = JournalWriter()
+                await writer.log_mode_change(
+                    _tenant_id(), persona_id, "paper", "live"
+                )
+
+            # Re-fetch to get updated state
+            persona = await repo.get(persona_id)
+            return persona, gate_result
+
+
+async def list_journal_entries(
+    *,
+    persona_id: UUID | None = None,
+    event_type: str | None = None,
+    limit: int = 200,
+) -> list[Any]:
+    """Query journal entries for the current tenant."""
+    from ..storage.models import JournalEntryModel
+    from sqlalchemy import select
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            stmt = (
+                select(JournalEntryModel)
+                .where(JournalEntryModel.tenant_id == _tenant_id())
+                .order_by(JournalEntryModel.created_at.desc())
+                .limit(limit)
+            )
+            if persona_id:
+                stmt = stmt.where(JournalEntryModel.persona_id == persona_id)
+            if event_type:
+                stmt = stmt.where(JournalEntryModel.event_type == event_type)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+
 def evaluate_gates_service(
     *,
     backtest_result: Any = None,
