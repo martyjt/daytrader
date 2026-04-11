@@ -71,6 +71,53 @@ class AlgorithmRegistry:
                 except Exception:
                     pass
 
+        # Phase 3 ML algorithm (optional dependency)
+        if "regime_hmm" not in cls._algorithms:
+            try:
+                from .builtin.regime_hmm import RegimeHMMAlgorithm
+
+                cls.register(RegimeHMMAlgorithm())
+            except ImportError:
+                pass  # hmmlearn not installed
+
+        # Phase 3 technical algorithms
+        _phase3 = [
+            ("ichimoku_cloud", "IchimokuCloudAlgorithm", "ichimoku_cloud"),
+            ("volume_profile", "VolumeProfileAlgorithm", "volume_profile"),
+            ("williams_r", "WilliamsRAlgorithm", "williams_r"),
+            ("cci_reversal", "CCIReversalAlgorithm", "cci_reversal"),
+            ("keltner_channel", "KeltnerChannelAlgorithm", "keltner_channel"),
+            ("obv_divergence", "OBVDivergenceAlgorithm", "obv_divergence"),
+            ("rsi_divergence", "RSIDivergenceAlgorithm", "rsi_divergence"),
+            ("mean_reversion_zscore", "MeanReversionZScoreAlgorithm", "mean_reversion_zscore"),
+            ("triple_ema", "TripleEMACrossoverAlgorithm", "triple_ema"),
+        ]
+        for algo_id, class_name, module_name in _phase3:
+            if algo_id not in cls._algorithms:
+                try:
+                    import importlib
+                    mod = importlib.import_module(f".builtin.{module_name}", package=__package__)
+                    algo_class = getattr(mod, class_name)
+                    cls.register(algo_class())
+                except Exception:
+                    pass
+
+        # Phase 5 PyTorch deep learning algorithms (optional dependency)
+        _phase5 = [
+            ("lstm_trend", "LSTMTrendAlgorithm", "lstm_trend"),
+            ("transformer_trend", "TransformerTrendAlgorithm", "transformer_trend"),
+            ("cnn_lstm_trend", "CNNLSTMTrendAlgorithm", "cnn_lstm_trend"),
+        ]
+        for algo_id, class_name, module_name in _phase5:
+            if algo_id not in cls._algorithms:
+                try:
+                    import importlib
+                    mod = importlib.import_module(f".builtin.{module_name}", package=__package__)
+                    algo_class = getattr(mod, class_name)
+                    cls.register(algo_class())
+                except Exception:
+                    pass  # torch not installed
+
     @classmethod
     def load_plugins(cls, plugin_dir: Path | str = "plugins") -> None:
         """Discover and register plugins from the given directory."""

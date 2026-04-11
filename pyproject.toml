@@ -27,7 +27,6 @@ dependencies = [
     "pyyaml>=6.0",
     # Backtest / indicators
     "backtesting>=0.3.3",
-    "pandas-ta>=0.3.14b0",
     # Data providers
     "ccxt>=4.3",
     "yfinance>=0.2.40",
@@ -35,6 +34,7 @@ dependencies = [
     # ML
     "xgboost>=2.0",
     "scikit-learn>=1.5",
+    "hmmlearn>=0.3",
     "mlflow>=2.14",
     # Scheduling
     "apscheduler>=3.10",
@@ -61,6 +61,11 @@ dev = [
     "types-pyyaml",
     "types-passlib",
     "aiosqlite>=0.20",
+]
+
+# Phase 5: deep learning algorithms.
+dl = [
+    "torch>=2.2",
 ]
 
 # Reserved for Phase 3+ (bulk optimization, GPU features).

@@ -12,8 +12,11 @@ NAV_ITEMS: list[tuple[str, str, str]] = [
     ("Home", "/", "dashboard"),
     ("Personas", "/personas", "smart_toy"),
     ("Strategy Lab", "/strategy-lab", "science"),
+    ("DAG Composer", "/dag-composer", "account_tree"),
     ("Plugins", "/plugins", "extension"),
     ("Risk Center", "/risk", "shield"),
+    ("Journal", "/journal", "history"),
+    ("Research Lab", "/research-lab", "biotech"),
 ]
 
 
@@ -51,12 +54,24 @@ def page_layout(title: str) -> None:
             ).props("flat align=left no-caps").classes("w-full")
 
 
-def _kill_switch() -> None:
-    ui.notify(
-        "Kill switch activated — all live trading halted",
-        type="warning",
-        position="top",
-    )
+async def _kill_switch() -> None:
+    from .services import kill_all_trading
+
+    try:
+        count = await kill_all_trading(reason="manual")
+        ui.notify(
+            f"Kill switch activated — {count} persona(s) paused",
+            type="warning",
+            position="top",
+            timeout=5000,
+        )
+    except RuntimeError:
+        # Kill switch not yet initialised (e.g. during startup)
+        ui.notify(
+            "Kill switch not ready — try again in a moment",
+            type="negative",
+            position="top",
+        )
 
 
 # ---- Reusable card components -------------------------------------------
@@ -81,6 +96,7 @@ def persona_card(
     persona: object,
     *,
     on_delete=None,
+    on_refresh=None,
 ) -> None:
     """Card showing a persona's name, mode, equity, P&L, and actions."""
     ic = float(getattr(persona, "initial_capital", 0) or 0)
@@ -126,13 +142,43 @@ def persona_card(
         ui.separator()
 
         # Actions
-        with ui.row().classes("w-full justify-between"):
+        with ui.row().classes("w-full justify-between flex-wrap gap-1"):
             ui.button(
                 "Open",
                 on_click=lambda p=persona: ui.navigate.to(
                     f"/strategy-lab?persona={p.id}"
                 ),
             ).props("flat dense color=primary")
+
+            if mode == "paper":
+                async def _do_promote(pid=persona.id, ac=getattr(persona, "asset_class", "crypto")):
+                    venue = "binance" if ac == "crypto" else "alpaca"
+                    try:
+                        from .services import promote_to_live
+
+                        _, gate_result = await promote_to_live(pid, venue)
+                        if gate_result.overall_pass:
+                            ui.notify(
+                                "Promoted to LIVE trading!",
+                                type="positive",
+                            )
+                        else:
+                            failed = ", ".join(
+                                c.gate_name for c in gate_result.failed_checks
+                            )
+                            ui.notify(
+                                f"Gates not passed: {failed}",
+                                type="warning",
+                                timeout=8000,
+                            )
+                        if on_refresh:
+                            await on_refresh()
+                    except ValueError as e:
+                        ui.notify(str(e), type="negative")
+
+                ui.button("Go Live", on_click=_do_promote).props(
+                    "flat dense color=green"
+                )
 
             if on_delete:
 

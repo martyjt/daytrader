@@ -23,15 +23,54 @@ async def _startup() -> None:
     async with get_session() as session:
         await seed_default_tenant(session, settings)
 
-    # Register built-in algorithms and data adapters.
+    # Register built-in algorithms, data adapters, and execution adapters.
     from ..algorithms.registry import AlgorithmRegistry
     from ..data.adapters.registry import AdapterRegistry
+    from ..execution.registry import ExecutionRegistry
 
     AlgorithmRegistry.auto_register()
     AdapterRegistry.auto_register()
+    ExecutionRegistry.auto_register()
+
+    # Initialise the journal writer, kill switch, and global risk monitor.
+    from ..journal.writer import JournalWriter
+    from ..execution.kill_switch import init_kill_switch
+    from ..risk.global_risk import GlobalRiskConfig, GlobalRiskMonitor
+    from ..execution.loop import TradingLoop
+
+    journal = JournalWriter()
+    kill_switch = init_kill_switch(journal=journal)
+
+    global_risk = GlobalRiskMonitor(GlobalRiskConfig.from_yaml())
+
+    # Start the live trading loop.
+    _loop = TradingLoop(
+        journal=journal,
+        kill_switch=kill_switch,
+        global_risk=global_risk,
+        tenant_id=settings.default_tenant_id,
+    )
+    await _loop.start()
+    app.state["trading_loop"] = _loop
 
 
 async def _shutdown() -> None:
+    # Stop the trading loop.
+    loop = app.state.get("trading_loop")
+    if loop:
+        await loop.stop()
+
+    # Close any live broker connections.
+    from ..execution.registry import ExecutionRegistry
+
+    for name in ExecutionRegistry.available():
+        adapter = ExecutionRegistry.get(name)
+        if hasattr(adapter, "close"):
+            try:
+                await adapter.close()
+            except Exception:
+                pass
+
     from ..storage.database import close_db
 
     await close_db()
@@ -44,9 +83,12 @@ def create_app() -> None:
 
     # Importing page modules triggers their @ui.page() decorators.
     from .pages import (  # noqa: F401
+        dag_composer,
         home,
+        journal,
         personas,
         plugins,
+        research_lab,
         risk_center,
         strategy_lab,
     )
