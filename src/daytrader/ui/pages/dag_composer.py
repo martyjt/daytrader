@@ -12,13 +12,24 @@ from typing import Any
 
 from nicegui import app, ui
 
+from pathlib import Path
+
 from ..shell import page_layout
 from ...algorithms.dag.combinators import COMBINATORS
 from ...algorithms.dag.composite import CompositeAlgorithm
-from ...algorithms.dag.serialization import dag_from_yaml, dag_to_yaml
+from ...algorithms.dag.serialization import dag_from_yaml, dag_to_yaml, save_dag, load_dag
 from ...algorithms.dag.types import DAGDefinition, DAGEdge, DAGNode
 from ...algorithms.dag.validation import validate
 from ...algorithms.registry import AlgorithmRegistry
+
+_DAGS_DIR = Path(__file__).resolve().parents[4] / "data" / "dags"
+
+
+def _list_saved_dags() -> list[str]:
+    """Return names of saved DAG files (without extension)."""
+    if not _DAGS_DIR.exists():
+        return []
+    return sorted(p.stem for p in _DAGS_DIR.glob("*.yaml"))
 
 # ---------------------------------------------------------------------------
 # LiteGraph.js bridge
@@ -37,11 +48,27 @@ function dtInitCanvas(containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
+    // Size the canvas element to match its container
+    const cvs = container.querySelector('canvas');
+    const rect = container.getBoundingClientRect();
+    cvs.width = rect.width || 1000;
+    cvs.height = rect.height || 600;
+
     const graph = new LGraph();
-    const canvas = new LGraphCanvas(container.querySelector('canvas'), graph);
+    const canvas = new LGraphCanvas(cvs, graph);
     canvas.background_color = '#141522';
     canvas.default_link_color = '#5c7cfa';
     canvas.highquality_render = true;
+    canvas.render_connections_border = false;
+    canvas.connections_width = 3;
+
+    // Resize canvas when window resizes
+    window.addEventListener('resize', function() {
+        const r = container.getBoundingClientRect();
+        cvs.width = r.width || 1000;
+        cvs.height = r.height || 600;
+        graph.setDirtyCanvas(true);
+    });
 
     // Register custom node types
     function DaytraderAlgoNode() {
@@ -58,12 +85,14 @@ function dtInitCanvas(containerId) {
     function DaytraderCombinatorNode() {
         this.addInput("signal_0", "signal");
         this.addInput("signal_1", "signal");
+        this.addInput("signal_2", "signal");
+        this.addInput("signal_3", "signal");
         this.addOutput("signal", "signal");
         this.title = "Combinator";
         this.color = "#3a2a5c";
         this.bgcolor = "#241a44";
         this.properties = { node_id: "", combinator_type: "", params: {} };
-        this.size = [200, 80];
+        this.size = [220, 140];
     }
     DaytraderCombinatorNode.title = "Combinator";
     LiteGraph.registerNodeType("daytrader/combinator", DaytraderCombinatorNode);
@@ -107,11 +136,12 @@ function dtAddCombinatorNode(nodeId, title, x, y, numInputs) {
     node.pos = [x, y];
     node.properties.node_id = nodeId;
     node.properties.combinator_type = title;
-    // Add extra inputs if needed
-    for (let i = 2; i < numInputs; i++) {
+    // Node type already has 4 inputs; add more only if needed
+    var totalInputs = Math.max(numInputs, 4);
+    for (let i = 4; i < totalInputs; i++) {
         node.addInput("signal_" + i, "signal");
     }
-    node.size = [200, 40 + numInputs * 20];
+    node.size = [220, 60 + totalInputs * 22];
     window._dt_graph.add(node);
     window._dt_node_map[nodeId] = node.id;
     return node.id;
@@ -192,6 +222,7 @@ async def dag_composer_page() -> None:
         "selected": None,   # selected node_id
         "counter": 0,       # unique node ID counter
         "dag_yaml": "",     # last saved YAML
+        "dag_name": "",     # current DAG name (for save/load)
     }
 
     def _next_id(prefix: str) -> str:
@@ -226,19 +257,24 @@ async def dag_composer_page() -> None:
         combinators = [n for n in nodes if n.node_type == "combinator"]
         root_id = combinators[-1].node_id if combinators else None
 
+        dag_name = _state["dag_name"] or "Untitled DAG"
+        dag_id = dag_name.lower().replace(" ", "_").replace("-", "_")
         return DAGDefinition(
-            id="user_dag",
-            name="User DAG",
+            id=dag_id,
+            name=dag_name,
             nodes=nodes,
             edges=edges,
             root_node_id=root_id,
         )
 
     # ----- Handlers -------------------------------------------------------
-    def _add_algorithm(algo_id: str) -> None:
+    def _add_algorithm(algo_id: str | None) -> None:
+        if not algo_id:
+            return
         nid = _next_id(algo_id.replace("-", "_"))
-        x = 100 + len([n for n in _state["nodes"] if n["node_type"] == "algorithm"]) * 220
-        y = 200
+        algo_count = len([n for n in _state["nodes"] if n["node_type"] == "algorithm"])
+        x = 50
+        y = 30 + algo_count * 100
         _state["nodes"].append({
             "node_id": nid,
             "node_type": "algorithm",
@@ -246,15 +282,20 @@ async def dag_composer_page() -> None:
             "params": {},
             "x": x, "y": y, "weight": 1.0,
         })
-        algo = AlgorithmRegistry.get(algo_id)
-        title = algo.manifest.name
+        try:
+            algo = AlgorithmRegistry.get(algo_id)
+            title = algo.manifest.name
+        except KeyError:
+            title = algo_id
         ui.run_javascript(f'dtAddAlgoNode("{nid}", "{title}", {x}, {y})')
         _update_node_list()
 
-    def _add_combinator(ctype: str) -> None:
+    def _add_combinator(ctype: str | None) -> None:
+        if not ctype:
+            return
         nid = _next_id(ctype)
-        x = 500
-        y = 300
+        x = 400
+        y = 80
         n_inputs = len([n for n in _state["nodes"] if n["node_type"] == "algorithm"])
         _state["nodes"].append({
             "node_id": nid,
@@ -264,7 +305,7 @@ async def dag_composer_page() -> None:
             "x": x, "y": y, "weight": 1.0,
         })
         ui.run_javascript(
-            f'dtAddCombinatorNode("{nid}", "{ctype}", {x}, {y}, {max(n_inputs, 2)})'
+            f'dtAddCombinatorNode("{nid}", "{ctype}", {x}, {y}, {max(n_inputs, 4)})'
         )
         _update_node_list()
 
@@ -401,6 +442,94 @@ async def dag_composer_page() -> None:
         import_dialog.close()
         ui.notify(f"Imported DAG: {dag.name}", type="positive")
 
+    def _save_dag() -> None:
+        name = save_name_input.value.strip()
+        if not name:
+            ui.notify("Enter a name for this DAG", type="warning")
+            return
+        _state["dag_name"] = name
+        dag = _build_dag()
+        errors = validate(dag)
+        if errors:
+            for e in errors:
+                ui.notify(e, type="negative")
+            return
+        try:
+            filename = name.lower().replace(" ", "_").replace("-", "_")
+            save_dag(dag, _DAGS_DIR / f"{filename}.yaml")
+            ui.notify(f"Saved '{name}'", type="positive")
+            save_dialog.close()
+            # Refresh load dropdown
+            load_select.set_options(_list_saved_dags())
+        except Exception as exc:
+            ui.notify(f"Save failed: {exc}", type="negative")
+
+    def _open_save_dialog() -> None:
+        save_name_input.set_value(_state["dag_name"])
+        save_dialog.open()
+
+    def _load_saved_dag(name: str | None) -> None:
+        if not name:
+            return
+        path = _DAGS_DIR / f"{name}.yaml"
+        if not path.exists():
+            ui.notify(f"DAG file not found: {name}", type="negative")
+            return
+        try:
+            dag = load_dag(path)
+        except Exception as exc:
+            ui.notify(f"Load failed: {exc}", type="negative")
+            return
+
+        # Clear and rebuild
+        _state["nodes"].clear()
+        _state["edges"].clear()
+        _state["dag_name"] = dag.name
+        ui.run_javascript("dtClearGraph()")
+
+        for node in dag.nodes:
+            nd = {
+                "node_id": node.node_id,
+                "node_type": node.node_type,
+                "algorithm_id": node.algorithm_id,
+                "combinator_type": node.combinator_type,
+                "params": dict(node.params),
+                "x": node.position[0], "y": node.position[1],
+                "weight": node.weight,
+            }
+            _state["nodes"].append(nd)
+            if node.node_type == "algorithm":
+                try:
+                    algo = AlgorithmRegistry.get(node.algorithm_id or "")
+                    title = algo.manifest.name
+                except KeyError:
+                    title = node.algorithm_id or "Unknown"
+                ui.run_javascript(
+                    f'dtAddAlgoNode("{node.node_id}", "{title}", '
+                    f'{node.position[0]}, {node.position[1]})'
+                )
+            else:
+                n_inputs = len(dag.children_of(node.node_id))
+                ui.run_javascript(
+                    f'dtAddCombinatorNode("{node.node_id}", "{node.combinator_type}", '
+                    f'{node.position[0]}, {node.position[1]}, {max(n_inputs, 4)})'
+                )
+
+        for i, edge in enumerate(dag.edges):
+            _state["edges"].append({
+                "source_id": edge.source_id,
+                "target_id": edge.target_id,
+            })
+            ui.run_javascript(
+                f'dtAddConnection("{edge.source_id}", "{edge.target_id}", {i})'
+            )
+
+        # Update counter to avoid ID collisions
+        _state["counter"] = len(dag.nodes) + 1
+        _update_node_list()
+        load_select.set_value(None)
+        ui.notify(f"Loaded '{dag.name}'", type="positive")
+
     def _remove_selected() -> None:
         sel = _state["selected"]
         if not sel:
@@ -528,21 +657,44 @@ async def dag_composer_page() -> None:
     with ui.row().classes("w-full items-center gap-2 q-pa-sm").style(
         "background-color: #1a1b2e; border-bottom: 1px solid #333"
     ):
+        def _on_algo_select(e) -> None:
+            if e.value:
+                _add_algorithm(e.value)
+                algo_select.set_value(None)
+
         algo_select = ui.select(
             AlgorithmRegistry.available(),
             label="Add Algorithm",
-            on_change=lambda e: (_add_algorithm(e.value), algo_select.set_value(None)),
+            on_change=_on_algo_select,
         ).classes("w-48")
+
+        def _on_combinator_select(e) -> None:
+            if e.value:
+                _add_combinator(e.value)
+                combinator_select.set_value(None)
 
         combinator_select = ui.select(
             list(COMBINATORS.keys()),
             label="Add Combinator",
-            on_change=lambda e: (_add_combinator(e.value), combinator_select.set_value(None)),
+            on_change=_on_combinator_select,
         ).classes("w-48")
 
         ui.button("Auto-Connect", icon="link", on_click=_auto_connect).props("flat dense")
         ui.button("Validate", icon="check_circle", on_click=_validate_dag).props("flat dense")
         ui.button("Remove Selected", icon="delete", on_click=_remove_selected).props("flat dense color=negative")
+        ui.separator().props("vertical")
+        ui.button("Save", icon="save", on_click=_open_save_dialog).props("flat dense")
+
+        def _on_load_select(e) -> None:
+            if e.value:
+                _load_saved_dag(e.value)
+
+        load_select = ui.select(
+            _list_saved_dags(),
+            label="Load DAG",
+            on_change=_on_load_select,
+        ).classes("w-40")
+
         ui.space()
         ui.button("Export YAML", icon="download", on_click=_export_yaml).props("flat dense")
         ui.button("Import YAML", icon="upload", on_click=_import_yaml).props("flat dense")
@@ -553,25 +705,27 @@ async def dag_composer_page() -> None:
         ).props("dense color=primary")
 
     # Main content: canvas + side panels
-    with ui.row().classes("w-full flex-grow gap-0").style("height: calc(100vh - 140px)"):
+    with ui.row().classes("w-full gap-0").style(
+        "height: calc(100vh - 120px); min-height: 500px"
+    ):
         # Left: node list
         with ui.column().classes("q-pa-sm gap-1").style(
-            "width: 200px; background-color: #141522; overflow-y: auto"
+            "width: 200px; background-color: #141522; overflow-y: auto; flex-shrink: 0"
         ):
             ui.label("NODES").classes("text-overline text-grey-7")
             node_list_container = ui.column().classes("gap-1 w-full")
 
         # Center: LiteGraph canvas
-        with ui.column().classes("flex-grow"):
+        with ui.column().classes("flex-grow").style("overflow: hidden"):
             canvas_container = ui.html(
                 '<div id="dag-canvas-container" style="width: 100%; height: 100%; position: relative">'
-                '<canvas width="1200" height="700" style="width: 100%; height: 100%"></canvas>'
+                '<canvas style="width: 100%; height: 100%"></canvas>'
                 '</div>'
-            ).classes("w-full flex-grow").style("min-height: 500px")
+            ).classes("w-full").style("height: 100%")
 
         # Right: properties panel
         with ui.column().classes("q-pa-sm gap-2").style(
-            "width: 260px; background-color: #141522; overflow-y: auto"
+            "width: 260px; background-color: #141522; overflow-y: auto; flex-shrink: 0"
         ):
             ui.label("PROPERTIES").classes("text-overline text-grey-7")
             props_container = ui.column().classes("gap-2 w-full")
@@ -592,3 +746,13 @@ async def dag_composer_page() -> None:
         with ui.row():
             ui.button("Import", on_click=_do_import).props("color=primary")
             ui.button("Cancel", on_click=import_dialog.close).props("flat")
+
+    with ui.dialog() as save_dialog, ui.card().classes("w-[400px]"):
+        ui.label("Save DAG").classes("text-h6")
+        save_name_input = ui.input(
+            "DAG Name",
+            placeholder="e.g. MACD + ADX + RSI",
+        ).classes("w-full")
+        with ui.row():
+            ui.button("Save", on_click=_save_dag).props("color=primary")
+            ui.button("Cancel", on_click=save_dialog.close).props("flat")
