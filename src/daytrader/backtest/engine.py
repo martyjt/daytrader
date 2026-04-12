@@ -25,8 +25,43 @@ from ..core.context import AlgorithmContext
 from ..core.types.bars import Bar, Timeframe
 from ..core.types.signals import Signal
 from ..core.types.symbols import Symbol
+from ..data.features.store import FeatureStore
 from .fees import FeeModel, FeeSchedule, VENUE_PROFILES
 from .risk import RiskConfig, compute_atr, check_stop_loss, check_take_profit, stop_loss_price, take_profit_price, DailyPnLTracker
+
+
+# Module-level cache for OHLCV fetches. First-time backtest hits the
+# adapter; subsequent runs with the same (symbol, timeframe, start, end)
+# read from on-disk Parquet. Cache lives at data/features/*.parquet.
+from pathlib import Path as _Path
+
+_FEATURE_STORE = FeatureStore(
+    _Path(__file__).resolve().parents[3] / "data" / "features"
+)
+
+
+async def _fetch_ohlcv_cached(
+    adapter: Any,
+    symbol: Symbol,
+    timeframe: Timeframe,
+    start: datetime,
+    end: datetime,
+) -> pl.DataFrame:
+    """Read-through cache wrapper around ``adapter.fetch_ohlcv``.
+
+    Cache key is ``(symbol, timeframe, start, end)``. Non-empty
+    DataFrames are persisted; empty results are not cached so a
+    transient failure won't poison the cache.
+    """
+    cache_key = f"{symbol.base}_{symbol.quote}"
+    tf_str = timeframe.value
+    cached = _FEATURE_STORE.get(cache_key, tf_str, start, end)
+    if cached is not None and not cached.is_empty():
+        return cached
+    df = await adapter.fetch_ohlcv(symbol, timeframe, start, end)
+    if not df.is_empty():
+        _FEATURE_STORE.put(cache_key, tf_str, start, end, df)
+    return df
 
 
 @dataclass
@@ -44,6 +79,7 @@ class BacktestResult:
     venue: str = "custom"
     debug_logs: list[dict[str, Any]] = field(default_factory=list)
     risk_events: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 class BacktestEngine:
@@ -101,14 +137,14 @@ class BacktestEngine:
 
         resolved_venue = fee_model.schedule.venue
 
-        # Fetch data if not provided
+        # Fetch data if not provided (with on-disk cache)
         if data is None:
             if adapter is None:
                 from ..data.adapters.registry import AdapterRegistry
 
                 AdapterRegistry.auto_register()
                 adapter = AdapterRegistry.get("yfinance")
-            data = await adapter.fetch_ohlcv(symbol, timeframe, start, end)
+            data = await _fetch_ohlcv_cached(adapter, symbol, timeframe, start, end)
 
         if data.is_empty():
             return BacktestResult(
@@ -127,7 +163,14 @@ class BacktestEngine:
         if params:
             resolved_params.update(params)
 
-        return self._simulate(
+        # Run the CPU-bound simulation in a worker thread so the
+        # asyncio event loop stays responsive. Without this, long
+        # composite backtests (5+ seconds) block NiceGUI's websocket
+        # heartbeat and the client sees "connection lost".
+        import asyncio
+
+        return await asyncio.to_thread(
+            self._simulate,
             algorithm, symbol, timeframe, data,
             initial_capital, fee_model, resolved_venue,
             risk_config=risk_config,
@@ -177,7 +220,13 @@ class BacktestEngine:
         tenant_id = uuid4()
         persona_id = uuid4()
 
+        import time as _time
         for i in range(n_bars):
+            # Release the GIL briefly every 100 bars so the asyncio
+            # event loop (running on the main thread) can service the
+            # NiceGUI websocket heartbeat during long backtests.
+            if i and i % 100 == 0:
+                _time.sleep(0)
             current_price = closes[i]
 
             # Mark-to-market before signal processing
@@ -392,6 +441,28 @@ class BacktestEngine:
             equity_curve, trades, initial_capital, total_fees, n_bars,
         )
 
+        # Surface data-sufficiency warnings so zero-trade results aren't
+        # silently misinterpreted as "strategy didn't work".
+        warnings_list: list[str] = []
+        signal_bars = max(0, n_bars - warmup)
+        if n_bars == 0:
+            warnings_list.append(
+                "No data returned for this symbol/date range. "
+                "Try a different symbol, a wider date range, or a different adapter."
+            )
+        elif signal_bars < 10:
+            warnings_list.append(
+                f"Only {signal_bars} usable bars after the {warmup}-bar warmup "
+                f"({n_bars} total). Results will be unreliable — extend the date range "
+                f"or use a shorter timeframe."
+            )
+        elif len(trades) == 0 and signal_bars >= 10:
+            warnings_list.append(
+                f"Algorithm produced no trades across {signal_bars} signal bars. "
+                f"The strategy may be too restrictive for this data, or thresholds "
+                f"may need tuning."
+            )
+
         return BacktestResult(
             equity_curve=equity_curve,
             timestamps=[str(t) for t in timestamps],
@@ -404,6 +475,7 @@ class BacktestEngine:
             venue=venue,
             debug_logs=debug_logs,
             risk_events=risk_events,
+            warnings=warnings_list,
         )
 
 

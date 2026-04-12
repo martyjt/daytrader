@@ -1,8 +1,11 @@
 """Built-in combinator functions for DAG composition.
 
-Each combinator is a pure function that merges child signals into
-a single composite signal. They operate on already-emitted signals,
-not on raw bar data.
+Each combinator merges child signals into a single composite signal.
+They operate on already-emitted signals, not on raw bar data.
+
+Most combinators are stateless pure functions; rolling variants
+accept an optional ``state`` dict that persists across bars so they
+can remember recent signals within a window.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ def weighted_average(
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
 ) -> tuple[float, float] | None:
     """Weighted average of child scores and confidences.
 
@@ -59,6 +63,7 @@ def majority_vote(
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
 ) -> tuple[float, float] | None:
     """Majority vote: signal direction = sign of weighted majority.
 
@@ -96,6 +101,7 @@ def threshold_filter(
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
 ) -> tuple[float, float] | None:
     """Pass first child's signal only if second child's score exceeds threshold.
 
@@ -125,6 +131,7 @@ def unanimous(
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
 ) -> tuple[float, float] | None:
     """Emit only if ALL children agree on direction.
 
@@ -145,9 +152,139 @@ def unanimous(
     return max(-1.0, min(1.0, avg_score)), max(0.0, min(1.0, avg_confidence))
 
 
+def _latest_signals_in_window(
+    signals: list[Signal | None],
+    state: dict[str, Any] | None,
+    window: int,
+) -> list[tuple[float, float] | None]:
+    """Update state with the current bar's signals and return the most
+    recent non-None (score, confidence) tuple per slot, within the
+    rolling window.
+
+    State layout: ``state["history"]`` is a list of per-bar entries;
+    each entry is a list of (score, confidence) tuples or None per slot.
+    """
+    if state is None:
+        # No state = can only see this bar. Degenerate to the given signals.
+        return [(s.score, s.confidence) if s else None for s in signals]
+
+    history: list[list[tuple[float, float] | None]] = state.setdefault(
+        "history", []
+    )
+    current = [(s.score, s.confidence) if s else None for s in signals]
+    history.append(current)
+    if len(history) > window:
+        del history[: len(history) - window]
+
+    # Find the most recent non-None per slot
+    n_slots = len(signals)
+    latest: list[tuple[float, float] | None] = [None] * n_slots
+    for bar_entry in history:
+        for i in range(min(n_slots, len(bar_entry))):
+            if bar_entry[i] is not None:
+                latest[i] = bar_entry[i]
+    return latest
+
+
+def rolling_unanimous(
+    signals: list[Signal | None],
+    weights: list[float],
+    *,
+    params: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
+) -> tuple[float, float] | None:
+    """Emit when at least ``min_fired`` children have fired within the
+    last ``window_bars`` and every one of those remembered signals
+    agrees on direction.
+
+    Unlike regular ``unanimous``, which only sees signals that fire on
+    the exact same bar (near-impossible with event-driven algos), this
+    version keeps a per-child memory so a MACD crossover 3 bars ago can
+    still "count" as recent agreement with an ADX signal firing now.
+
+    Children that have not fired within the window are ignored (they
+    don't vote either way). This means a silent child never blocks the
+    consensus — you don't need every algorithm to speak, just enough.
+
+    Params:
+        window_bars: int (default 5)
+        min_fired: int (default 2) — minimum number of children that
+            must have fired within the window for the vote to count.
+    """
+    window = int((params or {}).get("window_bars", 5))
+    min_fired = int((params or {}).get("min_fired", 2))
+    latest = _latest_signals_in_window(signals, state, window)
+
+    active = [s for s in latest if s is not None]
+    if len(active) < min_fired:
+        return None
+
+    scores = [s[0] for s in active]
+    confs = [s[1] for s in active]
+
+    all_bullish = all(v > 0 for v in scores)
+    all_bearish = all(v < 0 for v in scores)
+    if not (all_bullish or all_bearish):
+        return None
+
+    avg_score = sum(scores) / len(scores)
+    avg_conf = sum(confs) / len(confs)
+    return max(-1.0, min(1.0, avg_score)), max(0.0, min(1.0, avg_conf))
+
+
+def rolling_majority_vote(
+    signals: list[Signal | None],
+    weights: list[float],
+    *,
+    params: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
+) -> tuple[float, float] | None:
+    """Weighted majority of each child's most-recent signal within the
+    last ``window_bars``. Children that have not fired within the window
+    do not vote.
+
+    Fires when the bullish or bearish weight exceeds
+    ``min_agreement`` (default 0.5) of the voting weight.
+
+    Default window: 5 bars.
+    """
+    window = int((params or {}).get("window_bars", 5))
+    min_agreement = float((params or {}).get("min_agreement", 0.5))
+    latest = _latest_signals_in_window(signals, state, window)
+
+    # Each voter is (score, confidence, weight); score can be pos/neg
+    voters: list[tuple[float, float, float]] = []
+    for i in range(len(latest)):
+        item = latest[i]
+        if item is None or i >= len(weights):
+            continue
+        score, conf = item
+        voters.append((score, conf, weights[i]))
+
+    if not voters:
+        return None
+
+    total_w = sum(w for _, _, w in voters)
+    if total_w == 0:
+        return None
+
+    bull_w = sum(w for sc, _, w in voters if sc > 0)
+    bear_w = sum(w for sc, _, w in voters if sc < 0)
+
+    if bull_w > 0 and bull_w / total_w >= min_agreement:
+        avg = sum(sc * w for sc, _, w in voters if sc > 0) / bull_w
+        return max(0.0, min(1.0, avg)), bull_w / total_w
+    if bear_w > 0 and bear_w / total_w >= min_agreement:
+        avg = sum(sc * w for sc, _, w in voters if sc < 0) / bear_w
+        return max(-1.0, min(0.0, avg)), bear_w / total_w
+    return None
+
+
 COMBINATORS = {
     "weighted_average": weighted_average,
     "majority_vote": majority_vote,
     "threshold_filter": threshold_filter,
     "unanimous": unanimous,
+    "rolling_unanimous": rolling_unanimous,
+    "rolling_majority_vote": rolling_majority_vote,
 }

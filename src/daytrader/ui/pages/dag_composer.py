@@ -7,6 +7,7 @@ Python-side data model for validation and execution.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -309,6 +310,150 @@ async def dag_composer_page() -> None:
         )
         _update_node_list()
 
+    # Status tracking for the "sync indicator" shown in the toolbar.
+    # ``paused`` is set during load/clear operations so the periodic
+    # auto-sync doesn't race against in-flight JS commands.
+    _sync_status: dict[str, Any] = {
+        "nodes": 0, "edges": 0, "error": None, "paused": False,
+    }
+
+    _SYNC_JS = """
+(function() {
+    if (!window._dt_graph) return "null";
+    var nodes = [];
+    for (var n of window._dt_graph._nodes) {
+        nodes.push({
+            node_id: n.properties.node_id || "",
+            title: n.title,
+            type: n.type,
+            pos: [n.pos[0], n.pos[1]]
+        });
+    }
+    var edges = [];
+    var links = window._dt_graph.links;
+    if (links) {
+        for (var id in links) {
+            var l = links[id];
+            if (!l) continue;
+            var src = window._dt_graph.getNodeById(l.origin_id);
+            var tgt = window._dt_graph.getNodeById(l.target_id);
+            if (src && tgt && src.properties.node_id && tgt.properties.node_id) {
+                edges.push({
+                    source_id: src.properties.node_id,
+                    target_id: tgt.properties.node_id,
+                    target_slot: l.target_slot || 0
+                });
+            }
+        }
+    }
+    return JSON.stringify({nodes: nodes, edges: edges});
+})()
+"""
+
+    async def _sync_from_canvas(*, silent: bool = True) -> bool:
+        """Pull the current graph state from LiteGraph into Python ``_state``.
+
+        LiteGraph is the source of truth for user drag-and-drop actions,
+        but Python-side handlers build the DAG from ``_state``. Without
+        this sync, manually wired connections would be invisible to
+        validate/save/send-to-strategy-lab.
+
+        Returns True on success, False on failure. Errors are captured
+        in ``_sync_status["error"]`` and surfaced via the status label.
+
+        Safe against transient canvas states: if the sync observes
+        fewer nodes than Python has (e.g. while JS add/connect commands
+        are still in-flight after a Load), it leaves ``_state`` alone
+        rather than wiping it.
+        """
+        if _sync_status.get("paused"):
+            return False
+        try:
+            result = await ui.run_javascript(_SYNC_JS, timeout=2.0)
+        except Exception as exc:
+            _sync_status["error"] = f"JS error: {exc}"
+            if not silent:
+                ui.notify(f"Sync failed: {exc}", type="negative")
+            _refresh_sync_label()
+            return False
+
+        if not result or result == "null":
+            _sync_status["error"] = "canvas not initialized"
+            _refresh_sync_label()
+            return False
+
+        try:
+            data = json.loads(result)
+        except Exception as exc:
+            _sync_status["error"] = f"parse error: {exc}"
+            _refresh_sync_label()
+            return False
+
+        canvas_nodes = data.get("nodes", [])
+        canvas_edges = data.get("edges", [])
+
+        # Defensive: if the canvas reports fewer nodes than Python
+        # knows about, we're almost certainly observing an in-flight
+        # state (e.g. Load in progress) — don't wipe anything.
+        if len(canvas_nodes) < len(_state["nodes"]):
+            _sync_status["nodes"] = len(_state["nodes"])
+            _sync_status["edges"] = len(_state["edges"])
+            _sync_status["error"] = None
+            _refresh_sync_label()
+            return True
+
+        # Update positions of existing nodes from canvas (user may have
+        # dragged them). Don't create nodes here — they're created via
+        # the dropdown handlers which own the Python-side metadata.
+        pos_map = {
+            n["node_id"]: n["pos"] for n in canvas_nodes if n.get("node_id")
+        }
+        for state_node in _state["nodes"]:
+            if state_node["node_id"] in pos_map:
+                x, y = pos_map[state_node["node_id"]]
+                state_node["x"] = x
+                state_node["y"] = y
+
+        # Replace edges entirely with whatever the canvas shows.
+        _state["edges"] = [
+            {
+                "source_id": e["source_id"],
+                "target_id": e["target_id"],
+            }
+            for e in canvas_edges
+            if e.get("source_id") and e.get("target_id")
+        ]
+
+        _sync_status["nodes"] = len(_state["nodes"])
+        _sync_status["edges"] = len(_state["edges"])
+        _sync_status["error"] = None
+        _refresh_sync_label()
+        return True
+
+    def _refresh_sync_label() -> None:
+        """Update the live status label (called after every sync)."""
+        if "label" not in _sync_status:
+            return
+        label = _sync_status["label"]
+        if _sync_status.get("error"):
+            label.text = f"⚠ {_sync_status['error']}"
+            label.classes(replace="text-caption text-orange")
+        else:
+            label.text = (
+                f"nodes: {_sync_status['nodes']} · "
+                f"edges: {_sync_status['edges']}"
+            )
+            label.classes(replace="text-caption text-grey-5")
+
+    async def _manual_sync() -> None:
+        """User-triggered sync from the Refresh button."""
+        ok = await _sync_from_canvas(silent=False)
+        if ok:
+            ui.notify(
+                f"Synced: {_sync_status['nodes']} nodes, {_sync_status['edges']} edges",
+                type="positive",
+            )
+
     def _auto_connect() -> None:
         """Auto-connect all algorithm nodes to the first combinator."""
         combinator = None
@@ -334,7 +479,8 @@ async def dag_composer_page() -> None:
                 slot += 1
         ui.notify(f"Connected {slot} algorithms to {combinator['combinator_type']}", type="positive")
 
-    def _validate_dag() -> None:
+    async def _validate_dag() -> None:
+        await _sync_from_canvas()
         dag = _build_dag()
         errors = validate(dag)
         if errors:
@@ -344,6 +490,7 @@ async def dag_composer_page() -> None:
             ui.notify("DAG is valid!", type="positive")
 
     async def _send_to_strategy_lab() -> None:
+        await _sync_from_canvas()
         dag = _build_dag()
         errors = validate(dag)
         if errors:
@@ -362,14 +509,19 @@ async def dag_composer_page() -> None:
             ui.notify(str(exc), type="negative")
 
     def _clear_dag() -> None:
-        _state["nodes"].clear()
-        _state["edges"].clear()
-        _state["selected"] = None
-        ui.run_javascript("dtClearGraph()")
-        _update_node_list()
-        ui.notify("Canvas cleared", type="info")
+        _sync_status["paused"] = True
+        try:
+            _state["nodes"].clear()
+            _state["edges"].clear()
+            _state["selected"] = None
+            ui.run_javascript("dtClearGraph()")
+            _update_node_list()
+            ui.notify("Canvas cleared", type="info")
+        finally:
+            _sync_status["paused"] = False
 
-    def _export_yaml() -> None:
+    async def _export_yaml() -> None:
+        await _sync_from_canvas()
         dag = _build_dag()
         errors = validate(dag)
         if errors:
@@ -442,12 +594,13 @@ async def dag_composer_page() -> None:
         import_dialog.close()
         ui.notify(f"Imported DAG: {dag.name}", type="positive")
 
-    def _save_dag() -> None:
+    async def _save_dag() -> None:
         name = save_name_input.value.strip()
         if not name:
             ui.notify("Enter a name for this DAG", type="warning")
             return
         _state["dag_name"] = name
+        await _sync_from_canvas()
         dag = _build_dag()
         errors = validate(dag)
         if errors:
@@ -457,9 +610,15 @@ async def dag_composer_page() -> None:
         try:
             filename = name.lower().replace(" ", "_").replace("-", "_")
             save_dag(dag, _DAGS_DIR / f"{filename}.yaml")
-            ui.notify(f"Saved '{name}'", type="positive")
+            # Also register as a composite algorithm so it shows up in
+            # Strategy Lab / Research Lab / plugin list immediately.
+            composite = CompositeAlgorithm(dag)
+            AlgorithmRegistry.register(composite)
+            ui.notify(
+                f"Saved '{name}' — available in Strategy Lab as '{composite.manifest.id}'",
+                type="positive",
+            )
             save_dialog.close()
-            # Refresh load dropdown
             load_select.set_options(_list_saved_dags())
         except Exception as exc:
             ui.notify(f"Save failed: {exc}", type="negative")
@@ -480,6 +639,10 @@ async def dag_composer_page() -> None:
         except Exception as exc:
             ui.notify(f"Load failed: {exc}", type="negative")
             return
+
+        # Pause the auto-sync so in-flight JS commands can't race with
+        # the periodic canvas read and wipe the edges we're about to add.
+        _sync_status["paused"] = True
 
         # Clear and rebuild
         _state["nodes"].clear()
@@ -528,6 +691,15 @@ async def dag_composer_page() -> None:
         _state["counter"] = len(dag.nodes) + 1
         _update_node_list()
         load_select.set_value(None)
+
+        # Give the browser a moment to execute the queued JS commands
+        # before re-enabling auto-sync (prevents race with canvas draw).
+        async def _resume_sync_later() -> None:
+            await asyncio.sleep(1.5)
+            _sync_status["paused"] = False
+
+        asyncio.create_task(_resume_sync_later())
+
         ui.notify(f"Loaded '{dag.name}'", type="positive")
 
     def _remove_selected() -> None:
@@ -642,6 +814,54 @@ async def dag_composer_page() -> None:
                 except KeyError:
                     ui.label("Algorithm not found in registry").classes("text-negative")
 
+            elif node["node_type"] == "combinator":
+                ctype = node.get("combinator_type", "")
+                ui.separator()
+                ui.label("Combinator Params").classes("text-caption text-grey-5 q-mt-sm")
+
+                # Rolling variants take window_bars + min_fired / min_agreement
+                if ctype in ("rolling_unanimous", "rolling_majority_vote"):
+                    window_val = int(node.get("params", {}).get("window_bars", 5))
+                    w_inp = ui.number(
+                        "Window bars", value=window_val,
+                        min=1, max=200, step=1,
+                    ).classes("w-full")
+                    w_inp.on_value_change(
+                        lambda e, nd=node: nd.setdefault("params", {}).__setitem__("window_bars", int(e.value)) if e.value is not None else None
+                    )
+
+                    if ctype == "rolling_unanimous":
+                        min_fired_val = int(node.get("params", {}).get("min_fired", 2))
+                        mf_inp = ui.number(
+                            "Min fired", value=min_fired_val,
+                            min=1, max=10, step=1,
+                        ).classes("w-full")
+                        mf_inp.on_value_change(
+                            lambda e, nd=node: nd.setdefault("params", {}).__setitem__("min_fired", int(e.value)) if e.value is not None else None
+                        )
+                    else:  # rolling_majority_vote
+                        min_agree_val = float(node.get("params", {}).get("min_agreement", 0.5))
+                        ma_inp = ui.number(
+                            "Min agreement", value=min_agree_val,
+                            min=0.0, max=1.0, step=0.1,
+                        ).classes("w-full")
+                        ma_inp.on_value_change(
+                            lambda e, nd=node: nd.setdefault("params", {}).__setitem__("min_agreement", float(e.value)) if e.value is not None else None
+                        )
+
+                elif ctype == "majority_vote":
+                    min_agree_val = float(node.get("params", {}).get("min_agreement", 0.5))
+                    ui.number(
+                        "Min agreement", value=min_agree_val,
+                        min=0.0, max=1.0, step=0.1,
+                    ).classes("w-full").on_value_change(
+                        lambda e, nd=node: nd.setdefault("params", {}).__setitem__("min_agreement", float(e.value)) if e.value is not None else None
+                    )
+                else:
+                    ui.label("No params for this combinator").classes(
+                        "text-caption text-grey-6"
+                    )
+
             ui.separator()
             with ui.row().classes("q-mt-sm"):
                 ui.number(
@@ -684,6 +904,14 @@ async def dag_composer_page() -> None:
         ui.button("Remove Selected", icon="delete", on_click=_remove_selected).props("flat dense color=negative")
         ui.separator().props("vertical")
         ui.button("Save", icon="save", on_click=_open_save_dialog).props("flat dense")
+        ui.button(icon="refresh", on_click=_manual_sync).props(
+            "flat dense"
+        ).tooltip("Force-sync canvas state from LiteGraph to Python")
+
+        # Live status indicator
+        _sync_status["label"] = ui.label("nodes: 0 · edges: 0").classes(
+            "text-caption text-grey-5 q-ml-sm"
+        )
 
         def _on_load_select(e) -> None:
             if e.value:
@@ -732,6 +960,11 @@ async def dag_composer_page() -> None:
 
     # Initialize canvas after DOM is ready
     ui.timer(0.5, lambda: ui.run_javascript('dtInitCanvas("dag-canvas-container")'), once=True)
+
+    # Periodic auto-sync: pull graph state from LiteGraph every 2s so
+    # drag-and-drop connections stay in Python state without the user
+    # needing to remember to refresh manually. Skipped while `paused`.
+    ui.timer(2.0, _sync_from_canvas)
 
     # ----- Dialogs --------------------------------------------------------
 

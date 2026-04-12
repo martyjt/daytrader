@@ -85,7 +85,7 @@ async def strategy_lab_page() -> None:
             )
             timeframe = ui.select(
                 ["1d", "1h", "15m", "5m", "1w"], value="1d", label="Timeframe"
-            )
+            ).classes("min-w-[140px]")
 
         with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
             start_date = ui.input("Start Date", value="2024-01-01")
@@ -193,6 +193,15 @@ async def strategy_lab_page() -> None:
                 f"Fees paid: ${result.total_fees_paid:,.2f} · "
                 f"Fee drag: {kpis.get('fee_drag_pct', 0):.2f}%"
             ).classes("text-body2 text-grey-5 q-pb-sm")
+
+            # ---- Data-sufficiency warnings ---------------------------------
+            for warning in getattr(result, "warnings", []) or []:
+                with ui.card().classes("w-full q-pa-sm q-mb-sm").style(
+                    "background-color: #3a2a1a; border-left: 4px solid #f76707"
+                ):
+                    with ui.row().classes("items-start gap-2 no-wrap"):
+                        ui.icon("warning", color="warning", size="md")
+                        ui.label(warning).classes("text-body2 text-grey-3")
 
             # ---- KPI cards --------------------------------------------------
             net_ret = kpis.get("net_return_pct", 0)

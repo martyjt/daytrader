@@ -115,31 +115,55 @@ class WalkForwardEngine:
         resolved_venue = fee_model.schedule.venue
         total_bars = len(data)
 
+        # Auto-scale config to fit available data. Walk-forward requires at
+        # least ~min_train_bars + n_folds * 2 bars; if we don't have that,
+        # reduce min_train_bars (and folds if needed) so the split can run
+        # on short histories (e.g. weekly timeframes over a year).
+        min_bars_needed = config.min_train_bars + config.n_folds * 2
+        if total_bars < min_bars_needed:
+            # Reserve half the data for initial training, split the rest
+            # across the folds. Keep at least 10 bars for training and
+            # 2 bars per test fold.
+            adjusted_min_train = max(10, total_bars // 2)
+            remaining = total_bars - adjusted_min_train
+            adjusted_folds = min(config.n_folds, max(1, remaining // 2))
+            config = WalkForwardConfig(
+                n_folds=adjusted_folds,
+                anchored=config.anchored,
+                min_train_bars=adjusted_min_train,
+                gap_bars=config.gap_bars,
+            )
+
         splits = self._split_folds(data, config)
         if not splits:
             raise ValueError(
-                f"Cannot create {config.n_folds} folds from {total_bars} bars "
-                f"(min_train_bars={config.min_train_bars})"
+                f"Cannot create walk-forward folds from {total_bars} bars. "
+                f"Try a longer date range or a shorter timeframe."
             )
 
         fold_results: list[FoldResult] = []
         all_oos_equity: list[float] = []
         all_oos_timestamps: list[Any] = []
 
+        import asyncio
+
         for fold_idx, (train_df, test_df) in enumerate(splits):
             # Train the algorithm if it supports it
             if hasattr(algorithm, "train") and callable(algorithm.train):
-                algorithm.train(train_df)
+                await asyncio.to_thread(algorithm.train, train_df)
 
-            # Run backtest on train set
-            train_result = self._engine._simulate(
+            # Run backtest on train set (in worker thread to keep
+            # NiceGUI's websocket heartbeat alive during long runs).
+            train_result = await asyncio.to_thread(
+                self._engine._simulate,
                 algorithm, symbol, timeframe, train_df,
                 initial_capital, fee_model, resolved_venue,
                 risk_config=risk_config,
             )
 
             # Run backtest on test set
-            test_result = self._engine._simulate(
+            test_result = await asyncio.to_thread(
+                self._engine._simulate,
                 algorithm, symbol, timeframe, test_df,
                 initial_capital, fee_model, resolved_venue,
                 risk_config=risk_config,

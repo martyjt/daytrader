@@ -38,16 +38,47 @@ class CompositeAlgorithm(Algorithm):
         self._dag = dag
         self._topo_order = topological_order(dag)
         self._algorithms: dict[str, Algorithm] = {}
+        # Per-combinator-node mutable state (used by rolling combinators
+        # that need to remember signals across bars).
+        self._combinator_state: dict[str, dict[str, Any]] = {}
         self._instantiate_algorithms()
 
     @property
     def manifest(self) -> AlgorithmManifest:
+        # Expose every child algorithm's params at the top level so users
+        # can tune them from Strategy Lab (or any other UI that reads
+        # ``manifest.params``). Names are prefixed with the node id to
+        # keep them unique when multiple nodes share the same algorithm.
+        composed_params: list[AlgorithmParam] = []
+        for node in self._dag.nodes:
+            if node.node_type != "algorithm" or not node.algorithm_id:
+                continue
+            child = self._algorithms.get(node.node_id)
+            if child is None:
+                continue
+            child_name = child.manifest.name
+            for p in child.manifest.params:
+                # Current override takes precedence over manifest default
+                override = node.params.get(p.name, p.default)
+                composed_params.append(
+                    AlgorithmParam(
+                        name=f"{node.node_id}__{p.name}",
+                        type=p.type,
+                        default=override,
+                        min=p.min,
+                        max=p.max,
+                        step=p.step,
+                        choices=p.choices,
+                        description=f"[{child_name}] {p.description or p.name}",
+                    )
+                )
+
         return AlgorithmManifest(
             id=f"dag:{self._dag.id}",
             name=self._dag.name,
             version=self._dag.version,
             description=self._dag.description,
-            params=[],  # DAG params are per-node, not top-level
+            params=composed_params,
             asset_classes=["crypto", "equities"],
             timeframes=["1m", "5m", "15m", "1h", "4h", "1d"],
             author="DAG Composer",
@@ -118,11 +149,26 @@ class CompositeAlgorithm(Algorithm):
     def _make_node_context(
         self, parent_ctx: AlgorithmContext, node: DAGNode,
     ) -> AlgorithmContext:
-        """Create a per-node AlgorithmContext with isolated params."""
+        """Create a per-node AlgorithmContext with isolated params.
+
+        Param precedence (lowest → highest):
+        1. Child algorithm's manifest defaults
+        2. DAG-time per-node overrides (``node.params``)
+        3. Runtime overrides from the parent context, carrying names
+           prefixed with ``{node_id}__`` (lets users tune child params
+           from Strategy Lab without editing the saved YAML).
+        """
         algo = self._algorithms[node.node_id]
-        # Merge manifest defaults with node-specific overrides
         merged_params = dict(algo.manifest.param_defaults())
         merged_params.update(node.params)
+
+        # Pull runtime overrides for this specific node, stripping the
+        # {node_id}__ prefix. Silently ignores params addressed to other
+        # nodes.
+        prefix = f"{node.node_id}__"
+        for k, v in (parent_ctx.params or {}).items():
+            if isinstance(k, str) and k.startswith(prefix):
+                merged_params[k[len(prefix):]] = v
 
         # Capture signals locally instead of broadcasting to engine
         captured: list[Signal] = []
@@ -154,8 +200,12 @@ class CompositeAlgorithm(Algorithm):
         if combinator_fn is None:
             return None
 
+        node_state = self._combinator_state.setdefault(node.node_id, {})
         result = combinator_fn(
-            child_signals, child_weights, params=node.params,
+            child_signals,
+            child_weights,
+            params=node.params,
+            state=node_state,
         )
         if result is None:
             return None

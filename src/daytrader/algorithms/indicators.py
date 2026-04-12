@@ -24,17 +24,34 @@ def sma(data: np.ndarray, period: int) -> np.ndarray:
 def ema(data: np.ndarray, period: int) -> np.ndarray:
     """Exponential moving average (EMA).
 
-    Initializes with the SMA of the first ``period`` values, then
-    applies the standard multiplier ``k = 2 / (period + 1)``.
+    Initializes with the SMA of the first ``period`` valid (non-NaN)
+    values, then applies the standard multiplier ``k = 2 / (period + 1)``.
+    Leading NaN values are skipped so chaining EMAs (e.g. signal line in
+    MACD) works correctly.
     """
     out = np.full(len(data), np.nan)
-    if len(data) < period:
+
+    # Find the first index where we have `period` consecutive non-NaN values
+    valid_mask = ~np.isnan(data)
+    if valid_mask.sum() < period:
+        return out
+
+    # Find the start of the first run of non-NaN values that's long enough
+    start = 0
+    while start < len(data) and np.isnan(data[start]):
+        start += 1
+
+    if start + period > len(data):
         return out
 
     k = 2.0 / (period + 1)
-    out[period - 1] = np.mean(data[:period])
-    for i in range(period, len(data)):
-        out[i] = data[i] * k + out[i - 1] * (1 - k)
+    # Seed with SMA of first `period` valid values
+    out[start + period - 1] = float(np.mean(data[start : start + period]))
+    for i in range(start + period, len(data)):
+        if np.isnan(data[i]):
+            out[i] = out[i - 1]  # hold last value through any NaN gaps
+        else:
+            out[i] = data[i] * k + out[i - 1] * (1 - k)
     return out
 
 

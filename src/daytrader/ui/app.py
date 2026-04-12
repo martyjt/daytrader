@@ -32,6 +32,11 @@ async def _startup() -> None:
     AdapterRegistry.auto_register()
     ExecutionRegistry.auto_register()
 
+    # Register saved DAG compositions so they appear in Strategy Lab.
+    from pathlib import Path
+    _dags_dir = Path(__file__).resolve().parents[3] / "data" / "dags"
+    AlgorithmRegistry.load_saved_dags(_dags_dir)
+
     # Initialise the journal writer, kill switch, and global risk monitor.
     from ..journal.writer import JournalWriter
     from ..execution.kill_switch import init_kill_switch
@@ -51,12 +56,12 @@ async def _startup() -> None:
         tenant_id=settings.default_tenant_id,
     )
     await _loop.start()
-    app.state["trading_loop"] = _loop
+    app.state.trading_loop = _loop
 
 
 async def _shutdown() -> None:
     # Stop the trading loop.
-    loop = app.state.get("trading_loop")
+    loop = getattr(app.state, "trading_loop", None)
     if loop:
         await loop.stop()
 

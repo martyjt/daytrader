@@ -129,5 +129,29 @@ class AlgorithmRegistry:
                 cls.register(result.algorithm)
 
     @classmethod
+    def load_saved_dags(cls, dags_dir: Path | str) -> None:
+        """Register all saved DAG compositions as composite algorithms.
+
+        Reads every ``*.yaml`` file in ``dags_dir``, builds a
+        :class:`CompositeAlgorithm` from it, and registers the result.
+        Failed loads are skipped silently so one bad file can't break
+        startup.
+        """
+        from .dag.composite import CompositeAlgorithm
+        from .dag.serialization import load_dag
+
+        dags_dir = Path(dags_dir)
+        if not dags_dir.exists():
+            return
+        for yaml_file in sorted(dags_dir.glob("*.yaml")):
+            try:
+                dag = load_dag(yaml_file)
+                composite = CompositeAlgorithm(dag)
+                cls.register(composite)
+            except Exception:
+                # A single corrupt DAG shouldn't prevent startup.
+                pass
+
+    @classmethod
     def clear(cls) -> None:
         cls._algorithms.clear()
