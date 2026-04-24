@@ -33,7 +33,7 @@ from ..core.types.signals import Signal
 from ..core.types.symbols import Symbol
 from ..data.adapters.registry import AdapterRegistry
 from ..storage.database import get_session
-from ..storage.models import PersonaModel
+from ..storage.models import PersonaModel, StrategyConfigModel
 from ..storage.repository import TenantRepository
 
 from .registry import ExecutionRegistry
@@ -130,11 +130,9 @@ class TradingLoop:
 
     async def _process_persona(self, persona: Any) -> None:
         """Fetch bar → run algo → risk check → submit order → journal."""
-        meta = persona.meta or {}
-        algo_id = meta.get("algorithm_id")
-        symbol_str = meta.get("symbol")
-        timeframe_str = meta.get("timeframe", "1d")
-        algo_params = meta.get("params", {})
+        algo_id, symbol_str, timeframe_str, algo_params, venue = (
+            await self._resolve_persona_config(persona)
+        )
 
         if not algo_id or not symbol_str:
             return  # Persona not configured for live trading
@@ -237,8 +235,8 @@ class TradingLoop:
         # Determine action
         current_price = closes[i]
 
-        # Resolve execution adapter
-        executor = self._resolve_executor(persona)
+        # Resolve execution adapter (venue from resolved config takes precedence)
+        executor = self._resolve_executor(persona, venue=venue)
         if executor is None:
             return
 
@@ -317,6 +315,70 @@ class TradingLoop:
 
         await self._update_persona_equity(persona, new_equity)
 
+    async def _resolve_persona_config(
+        self, persona: Any
+    ) -> tuple[str | None, str | None, str, dict, str | None]:
+        """Resolve trading config for a persona — read-through to StrategyConfig.
+
+        Resolution order:
+        1. If ``meta.strategy_config_id`` is set, load StrategyConfigModel by
+           id and return its (algo_id, symbol, timeframe, algo_params, venue).
+           This makes edits to the saved strategy propagate live.
+        2. If the strategy was deleted or the id is malformed, log and fall
+           through to (3).
+        3. Use embedded ``persona.meta`` keys: ``algo_id`` (with
+           ``algorithm_id`` accepted as a back-compat alias), ``symbol``,
+           ``timeframe`` (default ``"1d"``), ``params``, ``venue``.
+
+        Returns a 5-tuple. ``algo_id`` and ``symbol`` may be ``None`` (caller
+        treats that as "not configured for live"); ``timeframe`` always falls
+        back to ``"1d"`` and ``params`` always falls back to ``{}``.
+        """
+        meta = persona.meta or {}
+        strategy_id_raw = meta.get("strategy_config_id")
+
+        if strategy_id_raw:
+            try:
+                sid = (
+                    strategy_id_raw
+                    if isinstance(strategy_id_raw, UUID)
+                    else UUID(str(strategy_id_raw))
+                )
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Invalid strategy_config_id %r on persona %s",
+                    strategy_id_raw, persona.name,
+                )
+                sid = None
+
+            if sid is not None:
+                async with get_session() as session:
+                    with tenant_scope(persona.tenant_id):
+                        repo = TenantRepository(session, StrategyConfigModel)
+                        strategy = await repo.get(sid)
+                if strategy is not None:
+                    return (
+                        strategy.algo_id,
+                        strategy.symbol,
+                        strategy.timeframe,
+                        dict(strategy.algo_params or {}),
+                        strategy.venue,
+                    )
+                logger.warning(
+                    "strategy_config_id %s on persona %s no longer exists; "
+                    "falling back to embedded meta",
+                    sid, persona.name,
+                )
+
+        algo_id = meta.get("algo_id") or meta.get("algorithm_id")
+        return (
+            algo_id,
+            meta.get("symbol"),
+            meta.get("timeframe", "1d"),
+            dict(meta.get("params") or {}),
+            meta.get("venue"),
+        )
+
     async def _get_active_personas(self) -> list[Any]:
         """Query all personas in live or paper mode."""
         if self._tenant_id is None:
@@ -338,8 +400,13 @@ class TradingLoop:
                 await repo.update(persona.id, current_equity=equity)
                 await session.commit()
 
-    def _resolve_executor(self, persona: Any) -> Any | None:
-        """Resolve the execution adapter for a persona."""
+    def _resolve_executor(self, persona: Any, venue: str | None = None) -> Any | None:
+        """Resolve the execution adapter for a persona.
+
+        ``venue`` overrides ``persona.meta.venue`` when provided — used by the
+        resolution chain so a venue from a bound StrategyConfig takes
+        precedence over any stale value embedded in the persona's meta.
+        """
         meta = persona.meta or {}
         mode = persona.mode
 
@@ -351,7 +418,8 @@ class TradingLoop:
                 return None
 
         # Live mode — resolve by asset class or venue preference
-        venue = meta.get("venue")
+        if venue is None:
+            venue = meta.get("venue")
         if venue:
             try:
                 return ExecutionRegistry.get(venue)

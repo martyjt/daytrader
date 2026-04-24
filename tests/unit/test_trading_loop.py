@@ -19,7 +19,7 @@ from daytrader.execution.loop import TradingLoop, _timeframe_to_days
 from daytrader.execution.paper import PaperExecutor
 from daytrader.execution.registry import ExecutionRegistry
 from daytrader.storage.database import Base
-from daytrader.storage.models import PersonaModel, TenantModel
+from daytrader.storage.models import PersonaModel, StrategyConfigModel, TenantModel
 from daytrader.storage.repository import TenantRepository
 from daytrader.core.types.bars import Timeframe
 
@@ -238,3 +238,204 @@ async def test_global_risk_breach_triggers_kill_switch(session, _patch_session):
 
 # Need asyncio for the kill_switch test
 import asyncio
+
+
+# ---------------------------------------------------------------------------
+# Persona config resolution (strategy binding)
+# ---------------------------------------------------------------------------
+
+
+async def test_resolve_persona_config_with_strategy_binding(session, _patch_session):
+    """A persona bound via strategy_config_id reads through to the saved strategy."""
+    sid = uuid4()
+    pid = uuid4()
+    with tenant_scope(TENANT_ID):
+        strat_repo = TenantRepository(session, StrategyConfigModel)
+        await strat_repo.create(
+            id=sid,
+            name="BTC RSI",
+            algo_id="rsi_mean_reversion",
+            symbol="BTC-USD",
+            timeframe="1h",
+            venue="binance_spot",
+            algo_params={"rsi_period": 21, "oversold": 25},
+        )
+        persona_repo = TenantRepository(session, PersonaModel)
+        persona = await persona_repo.create(
+            id=pid,
+            name="Bound Bot",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={"strategy_config_id": str(sid)},
+        )
+        await session.commit()
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+
+    assert algo_id == "rsi_mean_reversion"
+    assert symbol == "BTC-USD"
+    assert timeframe == "1h"
+    assert params == {"rsi_period": 21, "oversold": 25}
+    assert venue == "binance_spot"
+
+
+async def test_resolve_persona_config_strategy_edits_propagate(session, _patch_session):
+    """Editing the saved strategy is reflected on the next resolution."""
+    sid = uuid4()
+    pid = uuid4()
+    with tenant_scope(TENANT_ID):
+        strat_repo = TenantRepository(session, StrategyConfigModel)
+        await strat_repo.create(
+            id=sid,
+            name="EMA",
+            algo_id="ema_crossover",
+            symbol="ETH-USD",
+            timeframe="1d",
+            venue="binance_spot",
+            algo_params={"fast": 10, "slow": 30},
+        )
+        persona_repo = TenantRepository(session, PersonaModel)
+        persona = await persona_repo.create(
+            id=pid,
+            name="Bound Bot",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={"strategy_config_id": str(sid)},
+        )
+        await session.commit()
+
+        await strat_repo.update(sid, algo_params={"fast": 5, "slow": 50})
+        await session.commit()
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+    _, _, _, params, _ = await loop._resolve_persona_config(persona)
+
+    assert params == {"fast": 5, "slow": 50}
+
+
+async def test_resolve_persona_config_strategy_deleted_falls_back(session, _patch_session):
+    """When the bound strategy was deleted, fall back to embedded meta keys."""
+    pid = uuid4()
+    missing_sid = uuid4()
+    with tenant_scope(TENANT_ID):
+        repo = TenantRepository(session, PersonaModel)
+        persona = await repo.create(
+            id=pid,
+            name="Orphan",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={
+                "strategy_config_id": str(missing_sid),
+                "algo_id": "buy_hold",
+                "symbol": "BTC-USD",
+                "timeframe": "1d",
+                "params": {"fallback": True},
+                "venue": "fallback_venue",
+            },
+        )
+        await session.commit()
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+
+    assert algo_id == "buy_hold"
+    assert symbol == "BTC-USD"
+    assert timeframe == "1d"
+    assert params == {"fallback": True}
+    assert venue == "fallback_venue"
+
+
+async def test_resolve_persona_config_back_compat_algorithm_id(session, _patch_session):
+    """Legacy ``algorithm_id`` meta key still resolves (no binding)."""
+    pid = uuid4()
+    with tenant_scope(TENANT_ID):
+        repo = TenantRepository(session, PersonaModel)
+        persona = await repo.create(
+            id=pid,
+            name="Legacy",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={
+                "algorithm_id": "buy_hold",
+                "symbol": "BTC-USD",
+                "timeframe": "4h",
+            },
+        )
+        await session.commit()
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+
+    assert algo_id == "buy_hold"
+    assert symbol == "BTC-USD"
+    assert timeframe == "4h"
+    assert params == {}
+    assert venue is None
+
+
+async def test_resolve_persona_config_no_config(session, _patch_session):
+    """An unconfigured persona returns Nones — caller should skip."""
+    pid = uuid4()
+    with tenant_scope(TENANT_ID):
+        repo = TenantRepository(session, PersonaModel)
+        persona = await repo.create(
+            id=pid,
+            name="Empty",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={},
+        )
+        await session.commit()
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+
+    assert algo_id is None
+    assert symbol is None
+    assert timeframe == "1d"
+    assert params == {}
+    assert venue is None
+
+
+async def test_resolve_persona_config_invalid_strategy_id(session, _patch_session):
+    """Malformed strategy_config_id is logged and falls back to meta."""
+    pid = uuid4()
+    with tenant_scope(TENANT_ID):
+        repo = TenantRepository(session, PersonaModel)
+        persona = await repo.create(
+            id=pid,
+            name="BadId",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={
+                "strategy_config_id": "not-a-uuid",
+                "algo_id": "buy_hold",
+                "symbol": "BTC-USD",
+            },
+        )
+        await session.commit()
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+    algo_id, symbol, _, _, _ = await loop._resolve_persona_config(persona)
+
+    assert algo_id == "buy_hold"
+    assert symbol == "BTC-USD"
