@@ -39,7 +39,19 @@ async def personas_page() -> None:
                     persona_card(p, on_delete=refresh, on_refresh=refresh)
 
     async def open_create_dialog() -> None:
-        with ui.dialog() as dlg, ui.card().classes("w-96"):
+        # Fetch saved strategies so the create dialog can bind to one.
+        from ..services import list_strategies
+
+        try:
+            saved = await list_strategies()
+        except Exception:
+            saved = []
+        strategy_options = {"": "— (no strategy)"} | {
+            str(s.id): f"{s.name} · {s.symbol} {s.timeframe}"
+            for s in saved
+        }
+
+        with ui.dialog() as dlg, ui.card().classes("w-[420px]"):
             ui.label("Create Persona").classes("text-h6 q-pb-sm")
 
             name = ui.input(
@@ -66,6 +78,20 @@ async def personas_page() -> None:
                 label="Risk Profile",
             )
 
+            # Optional binding to a saved strategy recipe. When set, the
+            # persona's meta records the strategy id so downstream tools
+            # (live loop, Strategy Lab quicklink) can pull the recipe.
+            strategy_select = ui.select(
+                options=strategy_options,
+                value="",
+                label="Saved strategy (optional)",
+            )
+            if saved:
+                ui.label(
+                    "Binding a strategy records the recipe on the persona. "
+                    "Change later from the Strategies page."
+                ).classes("text-caption text-grey-6")
+
             ui.separator().classes("q-my-sm")
 
             with ui.row().classes("w-full justify-end gap-2"):
@@ -75,18 +101,63 @@ async def personas_page() -> None:
                     if not name.value or not name.value.strip():
                         ui.notify("Name is required", type="negative")
                         return
-                    await create_persona(
-                        name=name.value.strip(),
-                        asset_class=asset_class.value,
-                        base_currency=base_currency.value,
-                        initial_capital=Decimal(str(capital.value)),
-                        risk_profile=risk.value,
-                    )
+
+                    strategy_id = strategy_select.value or None
+                    meta: dict = {}
+                    chosen = None
+                    if strategy_id and saved:
+                        from uuid import UUID
+
+                        try:
+                            uid = UUID(strategy_id)
+                            chosen = next((s for s in saved if s.id == uid), None)
+                        except Exception:
+                            chosen = None
+                        if chosen:
+                            meta = {
+                                "strategy_config_id": str(chosen.id),
+                                "strategy_name": chosen.name,
+                                "algo_id": chosen.algo_id,
+                                "symbol": chosen.symbol,
+                                "timeframe": chosen.timeframe,
+                                "venue": chosen.venue,
+                            }
+
+                    # Use the richer service that supports meta.
+                    from ...core.context import tenant_scope
+                    from ...core.settings import get_settings
+                    from ...storage.database import get_session
+                    from ...storage.models import PersonaModel
+
+                    tid = get_settings().default_tenant_id
+                    async with get_session() as session:
+                        with tenant_scope(tid):
+                            row = PersonaModel(
+                                tenant_id=tid,
+                                name=name.value.strip(),
+                                mode="paper",
+                                asset_class=asset_class.value,
+                                base_currency=base_currency.value,
+                                initial_capital=Decimal(str(capital.value)),
+                                current_equity=Decimal(str(capital.value)),
+                                risk_profile=risk.value,
+                                meta=meta,
+                            )
+                            session.add(row)
+                            await session.commit()
+
                     dlg.close()
-                    ui.notify(
-                        f"Persona '{name.value}' created",
-                        type="positive",
-                    )
+                    if chosen:
+                        ui.notify(
+                            f"Persona '{name.value}' created — bound to "
+                            f"strategy '{chosen.name}'",
+                            type="positive",
+                        )
+                    else:
+                        ui.notify(
+                            f"Persona '{name.value}' created",
+                            type="positive",
+                        )
                     await refresh()
 
                 ui.button("Create", on_click=_do_create).props(

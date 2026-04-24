@@ -1,10 +1,11 @@
 """Research Lab — advanced research tooling for algorithm analysis.
 
-Four tabs:
+Five tabs:
     1. Model Comparison — run multiple algos side-by-side
     2. Hyperparameter Sweep — grid search over algo params
     3. Feature Attribution — visualize ML feature importance
     4. Walk-Forward Stability — analyze OOS consistency
+    5. Discoveries — Exploration Agent output (candidate features ranked by OOS lift)
 """
 
 from __future__ import annotations
@@ -42,6 +43,9 @@ async def research_lab_page() -> None:
         tab_sweep = ui.tab("Parameter Sweep", icon="tune")
         tab_attrib = ui.tab("Feature Attribution", icon="insights")
         tab_stability = ui.tab("WF Stability", icon="analytics")
+        tab_discover = ui.tab("Discoveries", icon="travel_explore")
+        tab_shadow = ui.tab("Shadow", icon="emoji_events")
+        tab_portfolio = ui.tab("Portfolio", icon="pie_chart")
 
     with ui.tab_panels(tabs, value=tab_compare).classes("w-full"):
 
@@ -68,6 +72,24 @@ async def research_lab_page() -> None:
         # ================================================================
         with ui.tab_panel(tab_stability):
             _build_stability_tab(algo_ids, algo_labels, venue_labels)
+
+        # ================================================================
+        # TAB 5: Discoveries (Exploration Agent output)
+        # ================================================================
+        with ui.tab_panel(tab_discover):
+            _build_discoveries_tab()
+
+        # ================================================================
+        # TAB 6: Shadow Tournament
+        # ================================================================
+        with ui.tab_panel(tab_shadow):
+            _build_shadow_tab(algo_ids, algo_labels, venue_labels)
+
+        # ================================================================
+        # TAB 7: Portfolio backtest across a symbol universe
+        # ================================================================
+        with ui.tab_panel(tab_portfolio):
+            _build_portfolio_tab(algo_ids, algo_labels, venue_labels)
 
 
 # ========================================================================
@@ -728,7 +750,944 @@ def _render_stability_results(area: ui.element, wf: object, metrics: dict) -> No
 # ========================================================================
 
 
+# ========================================================================
+# Tab 6: Shadow Tournament
+# ========================================================================
+
+
+def _build_shadow_tab(
+    algo_ids: list[str],
+    algo_labels: dict[str, str],
+    venue_labels: dict[str, str],
+) -> None:
+    """Candidate algorithms race a primary on the same data + walk-forward.
+
+    Winners get flagged for review; results persist in shadow_runs so the
+    promotion decision has an audit trail.
+    """
+    ui.label(
+        "Pick a primary (the incumbent) and N candidates. Each runs "
+        "walk-forward on the same symbol/window; candidates that beat the "
+        "primary on aggregate Sharpe AND ≥50% fold stability become "
+        "eligible for promotion."
+    ).classes("text-caption text-grey-5 q-pb-sm")
+
+    with ui.card().classes("w-full"):
+        ui.label("Tournament config").classes("text-subtitle1 q-pb-sm")
+
+        with ui.row().classes("w-full gap-4 items-end flex-wrap"):
+            default_primary = algo_ids[0] if algo_ids else ""
+            primary_in = ui.select(
+                options={aid: algo_labels[aid] for aid in algo_ids},
+                value=default_primary,
+                label="Primary (incumbent)",
+            ).classes("min-w-[220px]")
+            preferred = [
+                aid for aid in ("ema_crossover", "macd_signal", "rsi_mean_reversion")
+                if aid in algo_ids and aid != default_primary
+            ][:3]
+            candidates_in = ui.select(
+                options={aid: algo_labels[aid] for aid in algo_ids},
+                value=preferred,
+                label="Candidates",
+                multiple=True,
+            ).props("use-chips").classes("min-w-[420px] flex-grow")
+
+        with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
+            symbol_in = ui.input("Symbol", value="BTC-USD").classes("min-w-[140px]")
+            tf_in = ui.select(
+                ["1d", "4h", "1h"], value="1d", label="Timeframe",
+            ).classes("min-w-[100px]")
+            start_in = ui.input("Start Date", value="2024-01-01")
+            end_in = ui.input("End Date", value="2024-12-31")
+            capital_in = ui.number("Capital", value=10_000.0, min=100.0)
+            venue_in = ui.select(
+                options=venue_labels,
+                value="binance_spot",
+                label="Venue",
+            ).classes("min-w-[160px]")
+            folds_in = ui.number("WF Folds", value=5, min=3, max=10)
+
+    result_area = ui.column().classes("w-full q-pt-md")
+    history_area = ui.column().classes("w-full q-pt-md")
+
+    # Optional: pick a saved universe to drive which symbols get tested
+    # (the tournament runs per-symbol, so loading a universe re-runs the
+    # same primary/candidate set on each universe symbol sequentially).
+    async def _run_universe_tournament() -> None:
+        # Placeholder — the main button runs on the single `symbol_in`;
+        # loading a universe swaps symbol_in to the first entry and hints
+        # that multi-symbol per-tournament loops belong to Phase 8+.
+        pass
+
+    async def _refresh_history() -> None:
+        history_area.clear()
+        try:
+            from ..services import list_shadow_tournaments_service
+
+            rows = await list_shadow_tournaments_service(limit=20)
+        except Exception as exc:  # noqa: BLE001
+            with history_area:
+                ui.label(f"Failed to load history: {exc}").classes("text-negative")
+            return
+
+        with history_area:
+            ui.separator().classes("q-my-md")
+            ui.label("Recent tournaments").classes("text-subtitle1 q-pb-xs")
+            if not rows:
+                ui.label("No tournaments yet.").classes("text-caption text-grey-6")
+                return
+            cols = [
+                {"name": "when", "label": "When", "field": "when"},
+                {"name": "symbol", "label": "Symbol", "field": "symbol"},
+                {"name": "tf", "label": "Timeframe", "field": "tf"},
+                {"name": "primary", "label": "Primary", "field": "primary"},
+                {"name": "n_cand", "label": "# Candidates", "field": "n_cand"},
+                {"name": "n_wins", "label": "# Winners", "field": "n_wins"},
+            ]
+            table_rows = [
+                {
+                    "when": t["created_at"].strftime("%Y-%m-%d %H:%M") if t["created_at"] else "",
+                    "symbol": t["symbol"],
+                    "tf": t["timeframe"],
+                    "primary": t["primary"],
+                    "n_cand": t["n_candidates"],
+                    "n_wins": t["n_winners"],
+                }
+                for t in rows
+            ]
+            ui.aggrid({
+                "columnDefs": cols,
+                "rowData": table_rows,
+                "domLayout": "autoHeight",
+                "defaultColDef": {"sortable": True, "resizable": True},
+            }).classes("w-full")
+
+    async def _run_tournament() -> None:
+        result_area.clear()
+        if not primary_in.value or not candidates_in.value:
+            with result_area:
+                ui.label("Pick a primary and at least one candidate.").classes(
+                    "text-grey-5"
+                )
+            return
+
+        with result_area:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner(size="lg")
+                ui.label(
+                    f"Running tournament: {primary_in.value} vs "
+                    f"{len(candidates_in.value)} candidate(s)..."
+                ).classes("text-grey-5")
+
+        try:
+            from ..services import run_shadow_tournament_service
+
+            report = await run_shadow_tournament_service(
+                primary_algo_id=primary_in.value,
+                candidate_algo_ids=list(candidates_in.value),
+                symbol_str=symbol_in.value,
+                timeframe_str=tf_in.value,
+                start_str=start_in.value,
+                end_str=end_in.value,
+                initial_capital=float(capital_in.value or 10_000.0),
+                venue=venue_in.value,
+                n_folds=int(folds_in.value or 5),
+            )
+        except Exception as exc:  # noqa: BLE001
+            result_area.clear()
+            with result_area:
+                ui.icon("error", color="negative")
+                ui.label(f"Tournament failed: {exc}").classes("text-negative")
+            return
+
+        result_area.clear()
+        with result_area:
+            header = (
+                f"Tournament on {report.target_symbol} {report.target_timeframe} · "
+                f"{len(report.candidates)} algorithm(s) · "
+                f"{len(report.winners)} winner(s)"
+            )
+            with ui.row().classes("w-full items-center"):
+                ui.label(header).classes("text-body1")
+                ui.space()
+                _render_export_button(report, "tournament")
+
+            cols = [
+                {"name": "name", "label": "Algorithm", "field": "name"},
+                {"name": "sharpe", "label": "OOS Sharpe", "field": "sharpe", "sortable": True},
+                {"name": "ret", "label": "OOS Return %", "field": "ret"},
+                {"name": "dd", "label": "Max DD %", "field": "dd"},
+                {"name": "trades", "label": "# Trades", "field": "trades"},
+                {"name": "stab", "label": "Fold Wins", "field": "stab"},
+                {"name": "flag", "label": "Verdict", "field": "flag"},
+            ]
+            table_rows = []
+            for c in report.ranked():
+                flag = "PRIMARY" if c.is_primary else ("WINNER" if c.beat_primary else "—")
+                table_rows.append({
+                    "name": c.algo_name + (" *" if c.is_primary else ""),
+                    "sharpe": f"{c.sharpe:+.2f}",
+                    "ret": f"{c.net_return_pct:+.2f}",
+                    "dd": f"{c.max_drawdown_pct:+.2f}",
+                    "trades": c.num_trades,
+                    "stab": f"{int(c.stability_score * 100)}%",
+                    "flag": flag,
+                })
+            ui.aggrid({
+                "columnDefs": cols,
+                "rowData": table_rows,
+                "domLayout": "autoHeight",
+                "defaultColDef": {"sortable": True, "resizable": True},
+            }).classes("w-full")
+
+            # Action strip: promote / dismiss any candidate (only shown if
+            # there are non-primary candidates — primary doesn't need it).
+            action_rows = [c for c in report.ranked() if not c.is_primary and not c.error]
+            if action_rows:
+                winners = [c for c in action_rows if c.beat_primary]
+
+                with ui.row().classes("w-full items-center q-pt-md"):
+                    ui.label("Actions").classes("text-subtitle2")
+                    ui.space()
+                    if winners:
+                        async def _promote_all_winners() -> None:
+                            from ..services import update_shadow_status_service
+
+                            ok = 0
+                            for c in winners:
+                                try:
+                                    await update_shadow_status_service(
+                                        report.tournament_id, c.algo_id, "promoted",
+                                    )
+                                    ok += 1
+                                except Exception:  # noqa: BLE001
+                                    continue
+                            ui.notify(
+                                f"Promoted {ok}/{len(winners)} winners",
+                                type="positive",
+                            )
+
+                        ui.button(
+                            f"Promote all {len(winners)} winner(s)",
+                            icon="north",
+                            on_click=_promote_all_winners,
+                        ).props("color=positive outline dense")
+
+                for c in action_rows:
+                    _render_shadow_action_row(report.tournament_id, c)
+
+            # Overlay equity curves for quick visual comparison
+            curves_series = []
+            for i, c in enumerate(report.ranked()):
+                if not c.oos_equity_curve:
+                    continue
+                curves_series.append({
+                    "name": c.algo_name + (" *" if c.is_primary else ""),
+                    "type": "line",
+                    "data": [round(v, 2) for v in c.oos_equity_curve],
+                    "smooth": True,
+                    "showSymbol": False,
+                    "lineStyle": {
+                        "color": RESEARCH_PALETTE[i % len(RESEARCH_PALETTE)],
+                        "width": 3 if c.is_primary else 1.5,
+                    },
+                })
+            if curves_series:
+                max_len = max(len(s["data"]) for s in curves_series)
+                ui.echart({
+                    "backgroundColor": "transparent",
+                    "tooltip": {"trigger": "axis"},
+                    "legend": {"textStyle": {"color": "#bbb"}},
+                    "xAxis": {
+                        "type": "category",
+                        "data": list(range(max_len)),
+                        "name": "OOS Bar",
+                        "axisLabel": {"color": "#999"},
+                    },
+                    "yAxis": {
+                        "type": "value",
+                        "axisLabel": {"color": "#999"},
+                    },
+                    "series": curves_series,
+                    "grid": {"left": "8%", "right": "4%", "top": "12%", "bottom": "10%"},
+                }).classes("w-full").style("height: 360px")
+
+        await _refresh_history()
+
+    ui.button(
+        "Run Tournament", icon="emoji_events", on_click=_run_tournament,
+    ).props("color=primary unelevated size=lg").classes("q-mt-sm")
+
+    ui.timer(0.2, _refresh_history, once=True)
+
+
+# ========================================================================
+# Tab 7: Portfolio (multi-symbol backtest)
+# ========================================================================
+
+
+def _build_portfolio_tab(
+    algo_ids: list[str],
+    algo_labels: dict[str, str],
+    venue_labels: dict[str, str],
+) -> None:
+    """Backtest one algorithm across a universe of symbols with 1/N capital."""
+    ui.label(
+        "Run the same algorithm against a universe of symbols with equal "
+        "1/N capital allocation. Returns per-symbol and portfolio-level "
+        "KPIs plus an aggregate equity curve."
+    ).classes("text-caption text-grey-5 q-pb-sm")
+
+    with ui.card().classes("w-full"):
+        with ui.row().classes("w-full gap-4 items-end flex-wrap"):
+            algo_in = ui.select(
+                options={aid: algo_labels[aid] for aid in algo_ids},
+                value=algo_ids[0] if algo_ids else "",
+                label="Algorithm",
+            ).classes("min-w-[220px]")
+            symbols_in = ui.input(
+                "Symbols (comma-separated)",
+                value="BTC-USD, ETH-USD, AAPL",
+            ).classes("min-w-[360px] flex-grow")
+
+        # Saved universe picker — one-click populates the Symbols field.
+        universe_row = ui.row().classes("w-full gap-2 items-end q-pt-xs")
+
+        async def _refresh_universe_picker() -> None:
+            universe_row.clear()
+            try:
+                from ..services import list_universes
+
+                universes = await list_universes()
+            except Exception:
+                universes = []
+            with universe_row:
+                if not universes:
+                    ui.label(
+                        "No saved universes. Build one on the Universes page "
+                        "to populate symbols in one click."
+                    ).classes("text-caption text-grey-6")
+                    return
+                picker = ui.select(
+                    options={str(u.id): f"{u.name} ({len(u.symbols)})" for u in universes},
+                    label="Load universe",
+                ).classes("min-w-[220px]")
+
+                def _apply_universe(_=None) -> None:
+                    if not picker.value:
+                        return
+                    from uuid import UUID as _UUID
+
+                    uid = _UUID(picker.value)
+                    u = next((x for x in universes if x.id == uid), None)
+                    if not u:
+                        return
+                    symbols_in.value = ", ".join(u.symbols)
+                    ui.notify(
+                        f"Loaded universe: {u.name} ({len(u.symbols)} symbols)",
+                        type="info",
+                    )
+
+                picker.on_value_change(_apply_universe)
+
+        with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
+            tf_in = ui.select(
+                ["1d", "4h", "1h"], value="1d", label="Timeframe",
+            ).classes("min-w-[100px]")
+            start_in = ui.input("Start Date", value="2024-01-01")
+            end_in = ui.input("End Date", value="2024-12-31")
+            capital_in = ui.number(
+                "Total Capital", value=10_000.0, min=100.0,
+            )
+            venue_in = ui.select(
+                options=venue_labels,
+                value="binance_spot",
+                label="Venue",
+            ).classes("min-w-[160px]")
+
+    result_area = ui.column().classes("w-full q-pt-md")
+    ui.timer(0.2, _refresh_universe_picker, once=True)
+
+    async def run_portfolio() -> None:
+        result_area.clear()
+        symbols = [s.strip() for s in (symbols_in.value or "").split(",") if s.strip()]
+        if not symbols:
+            with result_area:
+                ui.label("Enter at least one symbol.").classes("text-grey-5")
+            return
+
+        with result_area:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner(size="lg")
+                ui.label(
+                    f"Backtesting {algo_in.value} on {len(symbols)} symbols..."
+                ).classes("text-grey-5")
+
+        try:
+            from ..services import run_portfolio_backtest_service
+
+            report = await run_portfolio_backtest_service(
+                algo_id=algo_in.value,
+                symbols=symbols,
+                timeframe_str=tf_in.value,
+                start_str=start_in.value,
+                end_str=end_in.value,
+                total_capital=float(capital_in.value or 10_000.0),
+                venue=venue_in.value,
+            )
+        except Exception as exc:  # noqa: BLE001
+            result_area.clear()
+            with result_area:
+                ui.icon("error", color="negative")
+                ui.label(f"Portfolio run failed: {exc}").classes("text-negative")
+            return
+
+        result_area.clear()
+        with result_area:
+            with ui.row().classes("w-full items-center"):
+                ui.label("Portfolio Results").classes("text-h6")
+                ui.space()
+                _render_export_button(report, "portfolio")
+            with ui.row().classes("gap-3 flex-wrap q-pb-sm"):
+                _kpi_card(
+                    "Total Return",
+                    f"{report.portfolio_return_pct:+.2f}%",
+                    color="positive" if report.portfolio_return_pct >= 0 else "negative",
+                )
+                _kpi_card(
+                    "Portfolio Sharpe",
+                    f"{report.portfolio_sharpe:.2f}",
+                    color="positive" if report.portfolio_sharpe >= 0.3 else "warning",
+                )
+                _kpi_card(
+                    "Max Drawdown",
+                    f"{report.portfolio_max_drawdown_pct:.2f}%",
+                    color="negative" if report.portfolio_max_drawdown_pct > 10 else "warning",
+                )
+                _kpi_card(
+                    "Final Equity",
+                    f"${report.final_total_equity:,.0f}",
+                )
+
+            # Per-symbol table
+            cols = [
+                {"name": "symbol", "label": "Symbol", "field": "symbol"},
+                {"name": "sharpe", "label": "Sharpe", "field": "sharpe", "sortable": True},
+                {"name": "ret", "label": "Return %", "field": "ret"},
+                {"name": "dd", "label": "Max DD %", "field": "dd"},
+                {"name": "trades", "label": "# Trades", "field": "trades"},
+                {"name": "final", "label": "Final $", "field": "final"},
+                {"name": "status", "label": "Status", "field": "status"},
+            ]
+            table_rows = []
+            for s in report.symbols:
+                table_rows.append({
+                    "symbol": s.symbol,
+                    "sharpe": f"{s.sharpe:+.2f}",
+                    "ret": f"{s.net_return_pct:+.2f}",
+                    "dd": f"{s.max_drawdown_pct:+.2f}",
+                    "trades": s.num_trades,
+                    "final": f"${s.final_equity:,.0f}",
+                    "status": "error" if s.error else "ok",
+                })
+            ui.aggrid({
+                "columnDefs": cols,
+                "rowData": table_rows,
+                "domLayout": "autoHeight",
+                "defaultColDef": {"sortable": True, "resizable": True},
+            }).classes("w-full")
+
+            best, worst = report.best_symbol, report.worst_symbol
+            if best and worst and best is not worst:
+                with ui.row().classes("gap-4 q-pt-sm"):
+                    ui.badge(
+                        f"Best: {best.symbol} (Sharpe {best.sharpe:+.2f})",
+                        color="positive",
+                    )
+                    ui.badge(
+                        f"Worst: {worst.symbol} (Sharpe {worst.sharpe:+.2f})",
+                        color="negative",
+                    )
+
+            # Equity curves: portfolio + each symbol (thin)
+            curves = []
+            if report.portfolio_equity_curve:
+                curves.append({
+                    "name": "Portfolio (sum)",
+                    "type": "line",
+                    "data": [round(v, 2) for v in report.portfolio_equity_curve],
+                    "smooth": True,
+                    "showSymbol": False,
+                    "lineStyle": {"color": "#5c7cfa", "width": 3},
+                })
+            for i, s in enumerate(report.symbols):
+                if not s.equity_curve:
+                    continue
+                curves.append({
+                    "name": s.symbol,
+                    "type": "line",
+                    "data": [round(v, 2) for v in s.equity_curve],
+                    "smooth": True,
+                    "showSymbol": False,
+                    "lineStyle": {
+                        "color": RESEARCH_PALETTE[i % len(RESEARCH_PALETTE)],
+                        "width": 1,
+                    },
+                })
+            if curves:
+                max_len = max(len(c["data"]) for c in curves)
+                ui.echart({
+                    "backgroundColor": "transparent",
+                    "tooltip": {"trigger": "axis"},
+                    "legend": {"textStyle": {"color": "#bbb"}},
+                    "xAxis": {
+                        "type": "category",
+                        "data": list(range(max_len)),
+                        "axisLabel": {"color": "#999"},
+                    },
+                    "yAxis": {
+                        "type": "value",
+                        "axisLabel": {"color": "#999"},
+                    },
+                    "series": curves,
+                    "grid": {"left": "8%", "right": "4%", "top": "12%", "bottom": "10%"},
+                }).classes("w-full").style("height: 360px")
+
+    ui.button(
+        "Run Portfolio Backtest",
+        icon="pie_chart",
+        on_click=run_portfolio,
+    ).props("color=primary unelevated size=lg").classes("q-mt-sm")
+
+
+def _render_export_button(report, kind: str) -> None:
+    """Button that opens a dialog with the report rendered as Markdown."""
+
+    def _open_export() -> None:
+        try:
+            from ..reports import portfolio_to_markdown, tournament_to_markdown
+
+            if kind == "tournament":
+                md = tournament_to_markdown(report)
+                title = "Tournament report — Markdown"
+            elif kind == "portfolio":
+                md = portfolio_to_markdown(report)
+                title = "Portfolio report — Markdown"
+            else:
+                md = f"(unknown kind: {kind})"
+                title = "Report"
+        except Exception as exc:  # noqa: BLE001
+            md = f"Export failed: {exc}"
+            title = "Export error"
+
+        with ui.dialog() as dialog, ui.card().classes("min-w-[720px] max-w-[1000px]"):
+            with ui.row().classes("w-full items-center justify-between q-pb-sm"):
+                ui.label(title).classes("text-h6")
+                ui.button(icon="close", on_click=dialog.close).props("flat dense")
+            ui.markdown(md).classes("w-full")
+            with ui.expansion("Copyable source", icon="content_copy").classes("w-full q-pt-sm"):
+                textarea = ui.textarea(value=md).classes("w-full").props("readonly rows=20")
+
+                def _copy() -> None:
+                    try:
+                        ui.run_javascript(
+                            f"navigator.clipboard.writeText({md!r})"
+                        )
+                        ui.notify("Report copied to clipboard", type="positive")
+                    except Exception:  # noqa: BLE001
+                        ui.notify("Copy failed — select from the box", type="warning")
+
+                ui.button("Copy to clipboard", icon="content_copy", on_click=_copy).props(
+                    "color=primary flat"
+                )
+        dialog.open()
+
+    ui.button("Export", icon="file_download", on_click=_open_export).props(
+        "flat dense"
+    ).tooltip("Copy this result as Markdown")
+
+
+def _render_shadow_action_row(tournament_id, candidate) -> None:
+    """One-line promote/dismiss control for a shadow candidate.
+
+    Shown beneath the tournament result table. Updates promotion_status
+    on the ``shadow_runs`` row(s) and notifies the user via an alert.
+    """
+    status_text = ui.label("")
+
+    def _set_status_text(status: str) -> None:
+        status_text.text = f"Status: {status}"
+        color = {
+            "promoted": "positive",
+            "dismissed": "negative",
+            "pending": "grey-5",
+        }.get(status, "grey-5")
+        status_text.classes(replace=f"text-caption text-{color}")
+
+    async def _set_status(new_status: str) -> None:
+        try:
+            from ..services import update_shadow_status_service
+
+            await update_shadow_status_service(
+                tournament_id, candidate.algo_id, new_status,
+            )
+            try:
+                _set_status_text(new_status)
+                ui.notify(
+                    f"{candidate.algo_name} → {new_status}",
+                    type="positive" if new_status == "promoted" else "warning",
+                )
+            except RuntimeError:
+                return
+        except Exception as exc:  # noqa: BLE001
+            try:
+                ui.notify(f"Action failed: {exc}", type="negative")
+            except RuntimeError:
+                return
+
+    badge_color = "positive" if candidate.beat_primary else "grey-8"
+    with ui.card().classes("w-full q-pa-sm q-mb-xs"):
+        with ui.row().classes("w-full items-center gap-3 no-wrap"):
+            ui.badge(
+                "WINNER" if candidate.beat_primary else "CANDIDATE",
+                color=badge_color,
+            ).props("outline" if not candidate.beat_primary else "")
+            ui.label(candidate.algo_name).classes("text-body2 text-weight-medium")
+            ui.label(
+                f"Sharpe {candidate.sharpe:+.2f} · Ret {candidate.net_return_pct:+.2f}% "
+                f"· Stab {int(candidate.stability_score*100)}%"
+            ).classes("text-caption text-grey-5")
+            ui.space()
+            _set_status_text("pending")
+            ui.button(
+                "Promote",
+                icon="north",
+                on_click=lambda _e=None: _set_status("promoted"),
+            ).props(
+                f"color=positive {'' if candidate.beat_primary else 'flat'} dense"
+            )
+            ui.button(
+                "Dismiss",
+                icon="south",
+                on_click=lambda _e=None: _set_status("dismissed"),
+            ).props("color=negative flat dense")
+
+
 def _kpi_card(label: str, value: str, *, color: str = "primary") -> None:
     with ui.card().classes("q-pa-sm min-w-[110px]"):
         ui.label(label).classes("text-caption text-grey-6")
         ui.label(value).classes(f"text-h6 text-weight-bold text-{color}")
+
+
+# ========================================================================
+# Tab 5: Discoveries (Exploration Agent)
+# ========================================================================
+
+
+def _build_discoveries_tab() -> None:
+    """Run the Exploration Agent and list candidate features ranked by OOS lift.
+
+    Every candidate seeded from FRED macro series + NewsAPI sentiment queries
+    is scored against a price-derived baseline. Benjamini-Hochberg FDR
+    correction keeps the significant-discovery list honest across many tests.
+    """
+    state: dict = {"last_result": None}
+
+    ui.label(
+        "The Exploration Agent tests whether candidate features (macro "
+        "series, news sentiment, cross-asset correlates) add predictive "
+        "lift over a price-derived baseline. Significant candidates pass "
+        "Benjamini-Hochberg FDR correction and can be promoted into your "
+        "algorithms."
+    ).classes("text-caption text-grey-5 q-pb-sm")
+
+    with ui.card().classes("w-full"):
+        ui.label("Run a scan").classes("text-subtitle1 q-pb-sm")
+        with ui.row().classes("w-full gap-4 items-end flex-wrap"):
+            symbol_in = ui.input("Target Symbol", value="BTC-USD").classes("min-w-[150px]")
+            tf_in = ui.select(
+                ["1d", "4h", "1h"], value="1d", label="Timeframe",
+            ).classes("min-w-[100px]")
+            start_in = ui.input("Start Date", value="2023-01-01")
+            end_in = ui.input("End Date", value="2024-12-31")
+            task_in = ui.select(
+                {"classification": "Direction (up/down)", "regression": "Log return"},
+                value="classification", label="Task",
+            ).classes("min-w-[180px]")
+            alpha_in = ui.number("FDR alpha", value=0.10, min=0.01, max=0.5, step=0.01)
+
+        with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
+            include_fred_in = ui.switch("Include FRED macro", value=True)
+            sentiment_in = ui.input(
+                "Sentiment queries (comma-separated)",
+                value="",
+                placeholder="e.g. bitcoin, ethereum",
+            ).classes("flex-grow")
+
+    scan_status = ui.column().classes("w-full q-pt-sm")
+    results_area = ui.column().classes("w-full q-pt-md")
+
+    async def run_scan() -> None:
+        scan_status.clear()
+        results_area.clear()
+        with scan_status:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner(size="lg")
+                ui.label(
+                    f"Running exploration scan on {symbol_in.value} "
+                    f"{tf_in.value} — this may take a minute..."
+                ).classes("text-grey-5")
+        try:
+            from ..services import run_exploration_service
+
+            queries = [
+                q.strip() for q in (sentiment_in.value or "").split(",") if q.strip()
+            ]
+            result = await run_exploration_service(
+                symbol_str=symbol_in.value,
+                timeframe_str=tf_in.value,
+                start_str=start_in.value,
+                end_str=end_in.value,
+                task=task_in.value,
+                fdr_alpha=float(alpha_in.value or 0.1),
+                include_fred=include_fred_in.value,
+                sentiment_queries=queries,
+            )
+        except Exception as exc:  # noqa: BLE001
+            scan_status.clear()
+            with scan_status:
+                ui.icon("error", size="lg", color="negative")
+                ui.label(f"Scan failed: {exc}").classes("text-negative")
+            return
+
+        state["last_result"] = result
+        scan_status.clear()
+        with scan_status:
+            ui.icon("check_circle", color="positive")
+            ui.label(
+                f"Scan complete — {result.n_candidates} candidates tested, "
+                f"{result.n_significant} passed FDR correction."
+            ).classes("text-positive")
+        await _refresh_discoveries_list(results_area, target_symbol=result.target_symbol)
+
+    ui.button(
+        "Run Scan", icon="search", on_click=run_scan,
+    ).props("color=primary unelevated size=lg").classes("q-mt-sm")
+
+    # ---- Feature drift monitor ----------------------------------------
+    ui.separator().classes("q-my-md")
+    ui.label("Baseline feature drift").classes("text-subtitle1 q-pb-xs")
+    ui.label(
+        "Population Stability Index on the Exploration Agent's baseline "
+        "features. Significant drift means the older lift tests are "
+        "comparing against a distribution that no longer matches the "
+        "current market — rerun a scan before acting on those results."
+    ).classes("text-caption text-grey-6 q-pb-xs")
+
+    drift_container = ui.column().classes("w-full")
+
+    async def run_drift_scan() -> None:
+        drift_container.clear()
+        with drift_container:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner(size="md")
+                ui.label("Scanning baseline feature drift...").classes("text-grey-5")
+        try:
+            from ...research.drift_monitor import scan_drift
+
+            drift = await scan_drift(
+                symbol_str=symbol_in.value,
+                timeframe_str=tf_in.value,
+            )
+        except Exception as exc:  # noqa: BLE001
+            drift_container.clear()
+            with drift_container:
+                ui.label(f"Drift scan failed: {exc}").classes("text-negative")
+            return
+
+        drift_container.clear()
+        if not drift.reports:
+            with drift_container:
+                ui.label(
+                    "Not enough bars to scan drift (need at least 40 on the "
+                    "selected symbol / timeframe)."
+                ).classes("text-warning")
+            return
+
+        color = {
+            "stable": "positive",
+            "moderate": "warning",
+            "significant": "negative",
+            "insufficient_data": "grey-5",
+        }
+        icon = {
+            "stable": "check_circle",
+            "moderate": "warning",
+            "significant": "error",
+            "insufficient_data": "help",
+        }
+
+        with drift_container:
+            overall = drift.overall_severity
+            with ui.row().classes("items-center gap-2 q-pb-xs"):
+                ui.icon(icon.get(overall, "help"), color=color.get(overall, "grey-5"))
+                ui.label(f"Overall: {overall.upper()}").classes(
+                    f"text-body1 text-weight-medium text-{color.get(overall, 'grey-5')}"
+                )
+
+            cols = [
+                {"name": "feature", "label": "Feature", "field": "feature"},
+                {"name": "psi", "label": "PSI", "field": "psi", "sortable": True},
+                {"name": "severity", "label": "Severity", "field": "severity"},
+                {"name": "ref_mean", "label": "Ref mean", "field": "ref_mean"},
+                {"name": "cur_mean", "label": "Cur mean", "field": "cur_mean"},
+                {"name": "ref_std", "label": "Ref std", "field": "ref_std"},
+                {"name": "cur_std", "label": "Cur std", "field": "cur_std"},
+            ]
+            rows = [
+                {
+                    "feature": r.feature,
+                    "psi": f"{r.psi:.4f}",
+                    "severity": r.severity,
+                    "ref_mean": f"{r.reference_mean:.4f}",
+                    "cur_mean": f"{r.current_mean:.4f}",
+                    "ref_std": f"{r.reference_std:.4f}",
+                    "cur_std": f"{r.current_std:.4f}",
+                }
+                for r in drift.reports
+            ]
+            ui.aggrid({
+                "columnDefs": cols,
+                "rowData": rows,
+                "domLayout": "autoHeight",
+                "defaultColDef": {"sortable": True, "resizable": True},
+            }).classes("w-full")
+
+    ui.button(
+        "Scan drift", icon="speed", on_click=run_drift_scan,
+    ).props("color=secondary outline size=sm").classes("q-mt-xs q-mb-sm")
+
+    ui.separator().classes("q-my-md")
+    ui.label("Recent discoveries").classes("text-subtitle1 q-pb-xs")
+
+    discoveries_container = ui.column().classes("w-full")
+
+    async def initial_load() -> None:
+        await _refresh_discoveries_list(discoveries_container)
+
+    ui.timer(0.1, initial_load, once=True)
+
+
+async def _refresh_discoveries_list(container, *, target_symbol: str | None = None) -> None:
+    from ..services import list_discoveries
+
+    container.clear()
+    try:
+        rows = await list_discoveries(target_symbol=target_symbol, limit=200)
+    except Exception as exc:  # noqa: BLE001
+        with container:
+            ui.label(f"Failed to load discoveries: {exc}").classes("text-negative")
+        return
+
+    if not rows:
+        with container:
+            ui.label(
+                "No discoveries yet — run a scan above to seed the list."
+            ).classes("text-grey-6 text-caption")
+        return
+
+    # AG Grid table of all candidates
+    columns = [
+        {"name": "created", "label": "When", "field": "created", "align": "left"},
+        {"name": "candidate", "label": "Candidate", "field": "candidate", "align": "left"},
+        {"name": "source", "label": "Source", "field": "source", "align": "left"},
+        {"name": "target", "label": "Target", "field": "target", "align": "left"},
+        {"name": "lift", "label": "Lift", "field": "lift", "align": "right", "sortable": True},
+        {"name": "p_value", "label": "p", "field": "p_value", "align": "right"},
+        {"name": "q_value", "label": "q (FDR)", "field": "q_value", "align": "right"},
+        {"name": "significant", "label": "Sig?", "field": "significant", "align": "center"},
+        {"name": "status", "label": "Status", "field": "status", "align": "left"},
+    ]
+
+    def _fmt(x: float | None, digits: int = 4) -> str:
+        if x is None:
+            return "—"
+        return f"{x:.{digits}f}"
+
+    table_rows = []
+    for r in rows:
+        table_rows.append({
+            "id": str(r.id),
+            "created": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
+            "candidate": r.candidate_name,
+            "source": r.candidate_source,
+            "target": f"{r.target_symbol} @ {r.target_timeframe}",
+            "lift": _fmt(r.lift, 4),
+            "p_value": _fmt(r.p_value, 4),
+            "q_value": _fmt(r.q_value, 4),
+            "significant": "✓" if r.significant else "",
+            "status": r.status,
+        })
+
+    with container:
+        ui.aggrid({
+            "columnDefs": columns,
+            "rowData": table_rows,
+            "domLayout": "autoHeight",
+            "defaultColDef": {"sortable": True, "resizable": True},
+        }).classes("w-full")
+
+        # Action rows for significant + pending discoveries: promote or dismiss.
+        actionable = [r for r in rows if r.significant and r.status == "new"]
+        if actionable:
+            ui.label(
+                "Significant discoveries awaiting review"
+            ).classes("text-subtitle2 q-pt-md")
+            for r in actionable[:10]:
+                _render_discovery_action_row(r, container)
+
+
+def _render_discovery_action_row(discovery, outer_container) -> None:
+    """Promote/dismiss buttons for one significant discovery."""
+    status_text = ui.label(f"Status: {discovery.status}").classes(
+        "text-caption text-grey-5"
+    )
+
+    async def _set_status(new_status: str) -> None:
+        from ..services import update_discovery_status
+
+        try:
+            await update_discovery_status(discovery.id, new_status)
+            status_text.text = f"Status: {new_status}"
+            color = (
+                "positive" if new_status == "promoted"
+                else "negative" if new_status == "dismissed"
+                else "grey-5"
+            )
+            status_text.classes(replace=f"text-caption text-{color}")
+            ui.notify(
+                f"{discovery.candidate_name} → {new_status}",
+                type="positive" if new_status == "promoted" else "warning",
+            )
+        except Exception as exc:  # noqa: BLE001
+            ui.notify(f"Action failed: {exc}", type="negative")
+
+    with ui.card().classes("w-full q-pa-sm q-mb-xs"):
+        with ui.row().classes("w-full items-center gap-3 no-wrap"):
+            ui.badge(discovery.candidate_source, color="primary").props("outline")
+            ui.label(discovery.candidate_name).classes("text-body2 text-weight-medium")
+            ui.label(
+                f"lift {discovery.lift:+.3f} · q "
+                f"{f'{discovery.q_value:.3f}' if discovery.q_value is not None else '—'}"
+            ).classes("text-caption text-grey-5")
+            ui.space()
+            status_text
+            ui.button(
+                "Promote", icon="north",
+                on_click=lambda _e=None: _set_status("promoted"),
+            ).props("color=positive dense flat")
+            ui.button(
+                "Dismiss", icon="south",
+                on_click=lambda _e=None: _set_status("dismissed"),
+            ).props("color=negative dense flat")

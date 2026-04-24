@@ -16,7 +16,7 @@ from ..shell import page_layout
 
 
 @ui.page("/strategy-lab")
-async def strategy_lab_page() -> None:
+async def strategy_lab_page(strategy: str | None = None) -> None:
     page_layout("Strategy Lab")
 
     # ---- shared state -------------------------------------------------------
@@ -27,6 +27,40 @@ async def strategy_lab_page() -> None:
         "ritual_step": "configure",
     }
     param_values: dict = {}
+
+    # ---- Optional: load saved strategy from ?strategy=<uuid> ----------------
+    preload: dict = {}
+    if strategy:
+        try:
+            from uuid import UUID
+
+            from sqlalchemy import select
+
+            from ...core.context import tenant_scope
+            from ...core.settings import get_settings
+            from ...storage.database import get_session
+            from ...storage.models import StrategyConfigModel
+
+            tid = get_settings().default_tenant_id
+            async with get_session() as session:
+                with tenant_scope(tid):
+                    row = (await session.execute(
+                        select(StrategyConfigModel)
+                        .where(StrategyConfigModel.id == UUID(strategy))
+                        .where(StrategyConfigModel.tenant_id == tid)
+                    )).scalar_one_or_none()
+                    if row:
+                        preload = {
+                            "name": row.name,
+                            "algo_id": row.algo_id,
+                            "symbol": row.symbol,
+                            "timeframe": row.timeframe,
+                            "venue": row.venue,
+                            "algo_params": dict(row.algo_params or {}),
+                        }
+                        param_values.update(preload["algo_params"])
+        except Exception:
+            preload = {}
 
     # ---- Ritual banner ------------------------------------------------------
     ritual_badges: dict[str, ui.badge] = {}
@@ -72,19 +106,32 @@ async def strategy_lab_page() -> None:
 
     # ---- Configuration form -------------------------------------------------
     with ui.card().classes("w-full"):
-        ui.label("Configure").classes("text-h6 q-pb-sm")
+        with ui.row().classes("w-full items-center"):
+            ui.label("Configure").classes("text-h6")
+            if preload:
+                ui.space()
+                ui.badge(f"Loaded: {preload['name']}", color="positive").props("outline")
+
+        default_algo = (
+            preload.get("algo_id") if preload.get("algo_id") in algo_ids
+            else (algo_ids[0] if algo_ids else "")
+        )
 
         with ui.row().classes("w-full gap-4 items-end"):
             algo = ui.select(
                 options={aid: algo_labels[aid] for aid in algo_ids},
-                value=algo_ids[0] if algo_ids else "",
+                value=default_algo,
                 label="Algorithm",
             ).classes("min-w-[200px]")
             symbol = ui.input(
-                "Symbol", value="BTC-USD", placeholder="e.g. BTC-USD, AAPL"
+                "Symbol",
+                value=preload.get("symbol", "BTC-USD"),
+                placeholder="e.g. BTC-USD, AAPL",
             )
             timeframe = ui.select(
-                ["1d", "1h", "15m", "5m", "1w"], value="1d", label="Timeframe"
+                ["1d", "1h", "15m", "5m", "1w"],
+                value=preload.get("timeframe", "1d"),
+                label="Timeframe",
             ).classes("min-w-[140px]")
 
         with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
@@ -93,12 +140,52 @@ async def strategy_lab_page() -> None:
             capital = ui.number("Capital ($)", value=10000, min=1)
             venue = ui.select(
                 options=venue_labels,
-                value="binance_spot",
+                value=preload.get("venue", "binance_spot"),
                 label="Venue / Fee Profile",
             ).classes("min-w-[200px]")
 
         with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
             risk_toggle = ui.switch("Enable Risk Layers (SL/TP)", value=False)
+
+        # ---- Regime suitability warning --------------------------------------
+        regime_warning = ui.row().classes("w-full q-pt-xs")
+
+        async def _refresh_regime_warning() -> None:
+            regime_warning.clear()
+            algo_id = algo.value
+            if not algo_id:
+                return
+            try:
+                from ...algorithms.registry import AlgorithmRegistry
+
+                suitable = AlgorithmRegistry.get(algo_id).manifest.suitable_regimes
+            except Exception:
+                suitable = None
+            if not suitable:
+                return  # algo is regime-agnostic
+            try:
+                from ..services_regime import get_current_regime
+
+                snap = await get_current_regime()
+            except Exception:
+                return
+            if snap.status != "ok":
+                return
+            if snap.regime in suitable:
+                return
+            top_pct = int(round(snap.probabilities.get(snap.regime, 0.0) * 100))
+            with regime_warning:
+                with ui.card().classes("w-full q-pa-sm").style(
+                    "background-color: #3d2e00; border-left: 4px solid #f76707"
+                ):
+                    with ui.row().classes("items-center gap-2 no-wrap"):
+                        ui.icon("warning", color="warning")
+                        ui.label(
+                            f"Regime mismatch: market looks {snap.regime.upper()} "
+                            f"({top_pct}%) but this algorithm is designed for "
+                            f"{', '.join(r.upper() for r in suitable)}. "
+                            f"Expect reduced edge."
+                        ).classes("text-body2 text-warning")
 
         # ---- Dynamic parameter form -----------------------------------------
         param_container = ui.column().classes("w-full q-pt-xs")
@@ -106,11 +193,13 @@ async def strategy_lab_page() -> None:
         def _on_algo_change(_):
             param_values.clear()
             render_param_form(algo.value, param_container, param_values)
+            ui.timer(0.1, _refresh_regime_warning, once=True)
 
         algo.on_value_change(_on_algo_change)
         # Render initial form
         if algo.value:
             render_param_form(algo.value, param_container, param_values)
+            ui.timer(0.3, _refresh_regime_warning, once=True)
 
         # Show selected venue's fee breakdown
         venue_info = ui.label("").classes("text-caption text-grey-6 q-pt-xs")

@@ -96,6 +96,88 @@ async def risk_center_page() -> None:
             }
         ).classes("w-full")
 
+    # ---- Cross-persona correlation monitor --------------------------------
+    ui.separator().classes("q-my-md")
+    ui.label("Cross-Persona Signal Correlation").classes("text-h6 q-pb-xs")
+    ui.label(
+        "Supposedly independent personas should NOT have highly "
+        "correlated signals. High correlation means hidden coupling or "
+        "overfitting to the same feature. Warn: |ρ| ≥ 0.7 · "
+        "Breach: |ρ| ≥ 0.9."
+    ).classes("text-caption text-grey-6 q-pb-sm")
+
+    corr_container = ui.column().classes("w-full")
+
+    async def _run_correlation_scan() -> None:
+        corr_container.clear()
+        with corr_container:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner(size="md")
+                ui.label(
+                    "Scanning cross-persona signal correlation (72h window)..."
+                ).classes("text-grey-5")
+        try:
+            from ..services import run_correlation_scan_service
+
+            report = await run_correlation_scan_service()
+        except Exception as exc:  # noqa: BLE001
+            corr_container.clear()
+            with corr_container:
+                ui.label(f"Correlation scan failed: {exc}").classes(
+                    "text-negative"
+                )
+            return
+
+        corr_container.clear()
+        with corr_container:
+            if not report.pairs:
+                ui.label(
+                    "Need at least 2 personas with recent signal activity. "
+                    "Come back after running paper trading for a few hours."
+                ).classes("text-grey-6 text-caption")
+                return
+
+            color = {"ok": "positive", "warn": "warning", "breach": "negative"}
+            icon = {"ok": "check_circle", "warn": "warning", "breach": "error"}
+            overall = report.overall_severity
+            with ui.row().classes("items-center gap-2 q-pb-xs"):
+                ui.icon(icon[overall], color=color[overall])
+                ui.label(f"Overall: {overall.upper()}").classes(
+                    f"text-body1 text-weight-medium text-{color[overall]}"
+                )
+
+            cols = [
+                {"name": "a", "label": "Persona A", "field": "a"},
+                {"name": "b", "label": "Persona B", "field": "b"},
+                {"name": "corr", "label": "ρ", "field": "corr"},
+                {"name": "abs", "label": "|ρ|", "field": "abs", "sortable": True},
+                {"name": "n", "label": "Buckets", "field": "n"},
+                {"name": "sev", "label": "Severity", "field": "sev"},
+            ]
+            rows = [
+                {
+                    "a": p.persona_a,
+                    "b": p.persona_b,
+                    "corr": f"{p.correlation:+.3f}",
+                    "abs": f"{abs(p.correlation):.3f}",
+                    "n": p.n_shared_buckets,
+                    "sev": p.severity,
+                }
+                for p in report.pairs
+            ]
+            ui.aggrid({
+                "columnDefs": cols,
+                "rowData": rows,
+                "domLayout": "autoHeight",
+                "defaultColDef": {"sortable": True, "resizable": True},
+            }).classes("w-full")
+
+    ui.button(
+        "Scan Correlations",
+        icon="hub",
+        on_click=_run_correlation_scan,
+    ).props("color=secondary outline size=sm").classes("q-mb-sm")
+
     # ---- Risk rules reference ---------------------------------------------
     ui.separator().classes("q-my-md")
     ui.label("Risk Rules (from config/default.yaml)").classes(

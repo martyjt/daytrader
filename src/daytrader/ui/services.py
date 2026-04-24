@@ -259,6 +259,23 @@ async def promote_to_live(
             return persona, gate_result
 
 
+async def list_recent_signals(limit: int = 100) -> list[Any]:
+    """Fetch the most recent signal rows (Signal table) across all personas."""
+    from sqlalchemy import select
+
+    from ..storage.models import SignalModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            rows = (await session.execute(
+                select(SignalModel)
+                .where(SignalModel.tenant_id == _tenant_id())
+                .order_by(SignalModel.created_at.desc())
+                .limit(limit)
+            )).scalars().all()
+            return list(rows)
+
+
 async def list_journal_entries(
     *,
     persona_id: UUID | None = None,
@@ -302,3 +319,340 @@ def evaluate_gates_service(
         results.append(evaluator.evaluate_walk_forward(walk_forward_result))
 
     return results
+
+
+# ----------------------------------------------------------------------
+# Exploration Agent (Discoveries tab)
+# ----------------------------------------------------------------------
+
+
+async def run_exploration_service(
+    *,
+    symbol_str: str,
+    timeframe_str: str,
+    start_str: str,
+    end_str: str,
+    task: str = "classification",
+    n_folds: int = 5,
+    fdr_alpha: float = 0.1,
+    include_fred: bool = True,
+    sentiment_queries: Sequence[str] | None = None,
+) -> Any:
+    """Trigger one Exploration Agent scan. Returns a ``ScanResult``."""
+    from datetime import datetime as dt
+
+    from ..research.exploration_agent import ExplorationAgent, ExplorationConfig
+
+    agent = ExplorationAgent(ExplorationConfig(
+        n_folds=n_folds,
+        fdr_alpha=fdr_alpha,
+        task=task,
+        include_fred=include_fred,
+        sentiment_queries=list(sentiment_queries or []),
+    ))
+    return await agent.scan(
+        tenant_id=_tenant_id(),
+        symbol_str=symbol_str,
+        timeframe_str=timeframe_str,
+        start=dt.strptime(start_str, "%Y-%m-%d"),
+        end=dt.strptime(end_str, "%Y-%m-%d"),
+    )
+
+
+async def list_discoveries(
+    *,
+    target_symbol: str | None = None,
+    significant_only: bool = False,
+    limit: int = 200,
+) -> list[Any]:
+    """List recent discoveries for the current tenant."""
+    from sqlalchemy import select
+
+    from ..storage.models import DiscoveryModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            stmt = (
+                select(DiscoveryModel)
+                .where(DiscoveryModel.tenant_id == _tenant_id())
+                .order_by(DiscoveryModel.created_at.desc())
+                .limit(limit)
+            )
+            if target_symbol:
+                stmt = stmt.where(DiscoveryModel.target_symbol == target_symbol)
+            if significant_only:
+                stmt = stmt.where(DiscoveryModel.significant.is_(True))
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+
+# ----------------------------------------------------------------------
+# Symbol universes + saved strategies
+# ----------------------------------------------------------------------
+
+
+async def list_universes() -> list[Any]:
+    from sqlalchemy import select
+
+    from ..storage.models import SymbolUniverseModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            rows = (await session.execute(
+                select(SymbolUniverseModel)
+                .where(SymbolUniverseModel.tenant_id == _tenant_id())
+                .order_by(SymbolUniverseModel.updated_at.desc())
+            )).scalars().all()
+            return list(rows)
+
+
+async def save_universe(
+    *,
+    name: str,
+    symbols: Sequence[str],
+    description: str = "",
+) -> UUID:
+    from ..storage.models import SymbolUniverseModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            row = SymbolUniverseModel(
+                tenant_id=_tenant_id(),
+                name=name.strip(),
+                symbols=[s.strip() for s in symbols if s.strip()],
+                description=description,
+            )
+            session.add(row)
+            await session.flush()
+            rid = row.id
+            await session.commit()
+            return rid
+
+
+async def delete_universe(universe_id: UUID) -> bool:
+    from sqlalchemy import delete
+
+    from ..storage.models import SymbolUniverseModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            result = await session.execute(
+                delete(SymbolUniverseModel)
+                .where(SymbolUniverseModel.tenant_id == _tenant_id())
+                .where(SymbolUniverseModel.id == universe_id)
+            )
+            await session.commit()
+            return result.rowcount > 0
+
+
+async def list_strategies() -> list[Any]:
+    from sqlalchemy import select
+
+    from ..storage.models import StrategyConfigModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            rows = (await session.execute(
+                select(StrategyConfigModel)
+                .where(StrategyConfigModel.tenant_id == _tenant_id())
+                .order_by(StrategyConfigModel.updated_at.desc())
+            )).scalars().all()
+            return list(rows)
+
+
+async def save_strategy_config(
+    *,
+    name: str,
+    algo_id: str,
+    symbol: str,
+    timeframe: str,
+    venue: str = "binance_spot",
+    algo_params: dict[str, Any] | None = None,
+    description: str = "",
+    tags: Sequence[str] | None = None,
+) -> UUID:
+    from ..storage.models import StrategyConfigModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            row = StrategyConfigModel(
+                tenant_id=_tenant_id(),
+                name=name.strip(),
+                algo_id=algo_id,
+                symbol=symbol,
+                timeframe=timeframe,
+                venue=venue,
+                algo_params=dict(algo_params or {}),
+                description=description,
+                tags=list(tags or []),
+            )
+            session.add(row)
+            await session.flush()
+            rid = row.id
+            await session.commit()
+            return rid
+
+
+async def delete_strategy_config(strategy_id: UUID) -> bool:
+    from sqlalchemy import delete
+
+    from ..storage.models import StrategyConfigModel
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            result = await session.execute(
+                delete(StrategyConfigModel)
+                .where(StrategyConfigModel.tenant_id == _tenant_id())
+                .where(StrategyConfigModel.id == strategy_id)
+            )
+            await session.commit()
+            return result.rowcount > 0
+
+
+async def run_portfolio_backtest_service(
+    *,
+    algo_id: str,
+    symbols: Sequence[str],
+    timeframe_str: str,
+    start_str: str,
+    end_str: str,
+    total_capital: float = 10_000.0,
+    venue: str = "binance_spot",
+    algo_params: dict[str, Any] | None = None,
+) -> Any:
+    """Backtest a single algorithm across a universe of symbols."""
+    from datetime import datetime as dt
+
+    from ..backtest.portfolio import run_portfolio_backtest
+
+    return await run_portfolio_backtest(
+        algo_id=algo_id,
+        symbols=list(symbols),
+        timeframe_str=timeframe_str,
+        start=dt.strptime(start_str, "%Y-%m-%d"),
+        end=dt.strptime(end_str, "%Y-%m-%d"),
+        total_capital=total_capital,
+        venue=venue,
+        algo_params=algo_params,
+    )
+
+
+async def run_shadow_tournament_service(
+    *,
+    primary_algo_id: str,
+    candidate_algo_ids: Sequence[str],
+    symbol_str: str,
+    timeframe_str: str,
+    start_str: str,
+    end_str: str,
+    initial_capital: float = 10_000.0,
+    venue: str = "binance_spot",
+    n_folds: int = 5,
+) -> Any:
+    """Run a shadow tournament and persist results."""
+    from datetime import datetime as dt
+
+    from ..research.shadow_trading import run_shadow_tournament
+
+    return await run_shadow_tournament(
+        tenant_id=_tenant_id(),
+        primary_algo_id=primary_algo_id,
+        candidate_algo_ids=list(candidate_algo_ids),
+        symbol_str=symbol_str,
+        timeframe_str=timeframe_str,
+        start=dt.strptime(start_str, "%Y-%m-%d"),
+        end=dt.strptime(end_str, "%Y-%m-%d"),
+        initial_capital=initial_capital,
+        venue=venue,
+        n_folds=n_folds,
+    )
+
+
+async def list_shadow_tournaments_service(limit: int = 50) -> list[Any]:
+    from ..research.shadow_trading import list_tournaments
+
+    return await list_tournaments(tenant_id=_tenant_id(), limit=limit)
+
+
+async def update_shadow_status_service(
+    tournament_id: UUID,
+    candidate_algo_id: str,
+    status: str,
+) -> int:
+    """Update all shadow_runs for (tournament, candidate) to the given status.
+
+    ``status``: ``"promoted" | "dismissed" | "pending"``.
+    Returns the number of rows updated.
+    """
+    from sqlalchemy import update
+
+    from ..storage.models import ShadowRunModel
+
+    if status not in ("promoted", "dismissed", "pending"):
+        raise ValueError(f"Invalid status {status!r}")
+
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            result = await session.execute(
+                update(ShadowRunModel)
+                .where(ShadowRunModel.tenant_id == _tenant_id())
+                .where(ShadowRunModel.tournament_id == tournament_id)
+                .where(ShadowRunModel.candidate_algo_id == candidate_algo_id)
+                .values(promotion_status=status)
+            )
+            await session.commit()
+
+    # Record an alert so the user sees the action in the bell dropdown.
+    try:
+        from .alerts import alerts as _alerts
+
+        verb = {"promoted": "promoted", "dismissed": "dismissed", "pending": "reset"}[status]
+        _alerts().add(
+            level="info" if status != "dismissed" else "warning",
+            title=f"Shadow candidate {verb}: {candidate_algo_id}",
+            body=f"Tournament {tournament_id} · {verb} {candidate_algo_id}",
+            source="shadow",
+            data={"tournament_id": str(tournament_id), "candidate": candidate_algo_id},
+        )
+    except Exception:
+        pass
+    return result.rowcount
+
+
+async def run_correlation_scan_service(
+    *,
+    lookback_hours: int = 72,
+    bucket_seconds: int = 3600,
+    warn_threshold: float = 0.7,
+    breach_threshold: float = 0.9,
+) -> Any:
+    """Run the cross-persona signal-correlation scan for the current tenant."""
+    from ..risk.correlation_monitor import scan_persona_correlations
+
+    return await scan_persona_correlations(
+        tenant_id=_tenant_id(),
+        lookback_hours=lookback_hours,
+        bucket_seconds=bucket_seconds,
+        warn_threshold=warn_threshold,
+        breach_threshold=breach_threshold,
+    )
+
+
+async def update_discovery_status(discovery_id: UUID, status: str) -> bool:
+    """Update a discovery's status (new/promoted/dismissed)."""
+    from sqlalchemy import update
+
+    from ..storage.models import DiscoveryModel
+
+    if status not in ("new", "promoted", "dismissed"):
+        raise ValueError(f"invalid status {status!r}")
+    async with get_session() as session:
+        with tenant_scope(_tenant_id()):
+            result = await session.execute(
+                update(DiscoveryModel)
+                .where(DiscoveryModel.id == discovery_id)
+                .where(DiscoveryModel.tenant_id == _tenant_id())
+                .values(status=status)
+            )
+            await session.commit()
+            return result.rowcount > 0

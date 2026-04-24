@@ -58,6 +58,29 @@ class AppSettings(BaseSettings):
     fred_api_key: SecretStr = SecretStr("")
     newsapi_key: SecretStr = SecretStr("")
 
+    # Additional market-data sources (Phase 6+ expansion)
+    alpha_vantage_api_key: SecretStr = SecretStr("")
+    twelve_data_api_key: SecretStr = SecretStr("")
+
+    # Exploration Agent scheduler (0 = disabled)
+    exploration_schedule_hours: float = 0.0
+    exploration_schedule_symbols: str = "BTC-USD"
+    exploration_schedule_timeframe: str = "1d"
+    exploration_schedule_lookback_days: int = 365
+
+    # Regime watcher — keeps the Regime Badge fresh and fires alerts on change
+    regime_refresh_minutes: float = 30.0
+    regime_pulse_symbol: str = "BTC-USD"
+    regime_pulse_timeframe: str = "1d"
+
+    # Shadow Tournament scheduler (0 = disabled)
+    shadow_schedule_hours: float = 0.0
+    shadow_schedule_primary: str = "ema_crossover"
+    shadow_schedule_candidates: str = "macd_signal,rsi_mean_reversion"
+    shadow_schedule_symbol: str = "BTC-USD"
+    shadow_schedule_timeframe: str = "1d"
+    shadow_schedule_lookback_days: int = 180
+
 
 class YamlConfig:
     """Layered YAML defaults (read-only). Env settings override these."""

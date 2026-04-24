@@ -12,11 +12,17 @@ NAV_ITEMS: list[tuple[str, str, str]] = [
     ("Home", "/", "dashboard"),
     ("Personas", "/personas", "smart_toy"),
     ("Strategy Lab", "/strategy-lab", "science"),
+    ("Strategies", "/strategies", "bookmarks"),
+    ("Charts", "/charts", "candlestick_chart"),
     ("DAG Composer", "/dag-composer", "account_tree"),
+    ("Bandit Builder", "/bandit-builder", "casino"),
+    ("Universes", "/universes", "pie_chart"),
     ("Plugins", "/plugins", "extension"),
     ("Risk Center", "/risk", "shield"),
+    ("Signals", "/signals", "radio"),
     ("Journal", "/journal", "history"),
     ("Research Lab", "/research-lab", "biotech"),
+    ("Data Cache", "/cache", "dataset"),
 ]
 
 
@@ -35,11 +41,14 @@ def page_layout(title: str) -> None:
 
         ui.label(title).classes("text-subtitle1 text-grey-5")
 
-        ui.button(
-            "KILL ALL",
-            color="negative",
-            on_click=_kill_switch,
-        ).props("flat dense")
+        with ui.row().classes("items-center gap-3 no-wrap"):
+            _render_regime_badge()
+            _render_alerts_badge()
+            ui.button(
+                "KILL ALL",
+                color="negative",
+                on_click=_kill_switch,
+            ).props("flat dense")
 
     # ---- Sidebar ---------------------------------------------------------
     with ui.left_drawer(value=True, fixed=True, bordered=True).style(
@@ -52,6 +61,132 @@ def page_layout(title: str) -> None:
                 icon=icon,
                 on_click=lambda p=path: ui.navigate.to(p),
             ).props("flat align=left no-caps").classes("w-full")
+
+
+_REGIME_COLORS = {
+    "bull": "positive",
+    "bear": "negative",
+    "sideways": "warning",
+    "unknown": "grey",
+}
+
+
+def _render_regime_badge() -> None:
+    """Renders the small regime pulse badge in the header.
+
+    Loads lazily via a background timer so the page paints immediately.
+    The HMM fit happens in a worker thread and is cached for 5 minutes
+    in ``services_regime``, so this is cheap per page nav.
+    """
+    badge_row = ui.row().classes("items-center gap-1 no-wrap")
+    with badge_row:
+        ui.icon("insights", size="xs").classes("text-grey-5")
+        label = ui.label("Regime: …").classes("text-caption text-grey-5")
+
+    async def refresh() -> None:
+        try:
+            from .services_regime import get_current_regime
+
+            snapshot = await get_current_regime()
+        except Exception:  # noqa: BLE001 — never let the badge break the page
+            return
+
+        # Mutating a label whose parent slot has been torn down (page nav)
+        # raises RuntimeError — swallow it, the next page will rebuild.
+        try:
+            if snapshot.status != "ok":
+                label.text = "Regime: —"
+                label.classes(replace="text-caption text-grey-6")
+                return
+
+            regime_text = snapshot.regime.upper()
+            color_cls = _REGIME_COLORS.get(snapshot.regime, "grey")
+            top_pct = int(round(snapshot.probabilities.get(snapshot.regime, 0.0) * 100))
+            label.text = f"Regime: {regime_text} {top_pct}%"
+            label.classes(replace=f"text-caption text-{color_cls}")
+            probs_str = " · ".join(
+                f"{k}: {int(round(v*100))}%" for k, v in snapshot.probabilities.items()
+            )
+            label.tooltip(
+                f"Pulse: {snapshot.pulse_symbol} {snapshot.pulse_timeframe} "
+                f"({snapshot.bars_analyzed} bars)\n{probs_str}"
+            )
+        except RuntimeError:
+            return
+
+    ui.timer(0.5, refresh, once=True)
+
+
+_ALERT_LEVEL_COLORS = {
+    "info": "primary",
+    "warning": "warning",
+    "critical": "negative",
+}
+_ALERT_LEVEL_ICONS = {
+    "info": "info",
+    "warning": "warning",
+    "critical": "report",
+}
+
+
+def _render_alerts_badge() -> None:
+    """Bell icon with unread count. Click opens a scrollable alerts menu.
+
+    Count refreshes on-demand (when the dialog opens) plus a slow 15-second
+    background poll — deliberately low-frequency so the UI doesn't churn.
+    """
+    from .alerts import alerts as _alerts
+
+    label = ui.label("").classes("text-warning text-caption q-mr-xs")
+    bell_btn = ui.button(icon="notifications_none", on_click=None).props(
+        "flat dense round"
+    ).classes("text-grey-4")
+
+    def _refresh() -> None:
+        # Swallow dead-element errors when the page has navigated away.
+        try:
+            n = _alerts().unread_count()
+            label.text = (str(n) if n < 100 else "99+") if n > 0 else ""
+        except RuntimeError:
+            return
+
+    dialog = ui.dialog()
+
+    async def _open_dialog() -> None:
+        items = _alerts().list(limit=30)
+        _alerts().mark_all_read()
+        _refresh()
+        dialog.clear()
+        with dialog, ui.card().classes("min-w-[520px] max-w-[720px]"):
+            with ui.row().classes("w-full items-center justify-between q-pb-sm"):
+                ui.label(f"Alerts ({len(items)})").classes("text-h6")
+                ui.button(icon="close", on_click=dialog.close).props("flat dense")
+            if not items:
+                ui.label("No alerts yet.").classes("text-caption text-grey-6")
+            for a in items:
+                color = _ALERT_LEVEL_COLORS.get(a.level, "primary")
+                icon_name = _ALERT_LEVEL_ICONS.get(a.level, "info")
+                with ui.card().classes("w-full q-pa-sm q-mb-xs").style(
+                    f"border-left: 3px solid var(--q-{color})"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon(icon_name, color=color)
+                        ui.label(a.title).classes("text-body2 text-weight-medium")
+                        ui.space()
+                        ui.label(a.created_at.strftime("%H:%M:%S")).classes(
+                            "text-caption text-grey-6"
+                        )
+                    if a.body:
+                        ui.label(a.body).classes("text-caption text-grey-4 q-pt-xs")
+                    if a.source:
+                        ui.badge(a.source, color="grey-8").props("outline")
+        dialog.open()
+
+    bell_btn.on_click(_open_dialog)
+    # Refresh once at page load; users see updates when they click the bell.
+    # A persistent background timer would outlive page navigation and spam
+    # "dead element" errors — not worth it for a visual count.
+    _refresh()
 
 
 async def _kill_switch() -> None:
@@ -145,9 +280,7 @@ def persona_card(
         with ui.row().classes("w-full justify-between flex-wrap gap-1"):
             ui.button(
                 "Open",
-                on_click=lambda p=persona: ui.navigate.to(
-                    f"/strategy-lab?persona={p.id}"
-                ),
+                on_click=lambda p=persona: ui.navigate.to(f"/persona/{p.id}"),
             ).props("flat dense color=primary")
 
             if mode == "paper":

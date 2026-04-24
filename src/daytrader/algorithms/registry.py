@@ -118,6 +118,34 @@ class AlgorithmRegistry:
                 except Exception:
                     pass  # torch not installed
 
+        # Phase 7 reinforcement-learning agents (optional 'rl' extra)
+        if "ppo_agent" not in cls._algorithms:
+            try:
+                from .rl.ppo_agent import PPOAgent
+
+                cls.register(PPOAgent())
+            except Exception:
+                pass  # stable-baselines3 / gymnasium not installed
+
+        if "sac_agent" not in cls._algorithms:
+            try:
+                from .rl.sac_agent import SACAgent
+
+                cls.register(SACAgent())
+            except Exception:
+                pass
+
+        # BanditAllocator is unconditionally available — it has no external
+        # dependency and is only useful when children are injected (e.g.
+        # through a DAG). Register a no-children template.
+        if "bandit_allocator" not in cls._algorithms:
+            try:
+                from .rl.bandit_allocator import BanditAllocator
+
+                cls.register(BanditAllocator())
+            except Exception:
+                pass
+
     @classmethod
     def load_plugins(cls, plugin_dir: Path | str = "plugins") -> None:
         """Discover and register plugins from the given directory."""
