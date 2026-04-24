@@ -26,11 +26,15 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Data
-data/
+# Data (root only — do not match src/daytrader/data/)
+/data/
 *.parquet
 *.db
 *.sqlite3
+
+# Claude Code session files (keep shared launch config)
+.claude/*
+!.claude/launch.json
 
 # mlflow
 mlruns/
