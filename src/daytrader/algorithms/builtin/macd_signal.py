@@ -23,6 +23,11 @@ from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ..indicators import ema
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ...core.types.visualize import (
+    PlotTrace,
+    VisualizeContext,
+    nan_array_to_jsonable,
+)
 
 
 class MACDSignalAlgorithm(Algorithm):
@@ -66,6 +71,7 @@ class MACDSignalAlgorithm(Algorithm):
                 ),
             ],
             author="Daytrader built-in",
+            suitable_regimes=["bull", "bear"],
         )
 
     def warmup_bars(self) -> int:
@@ -144,3 +150,37 @@ class MACDSignalAlgorithm(Algorithm):
             )
 
         return None
+
+    def visualize(self, vctx: VisualizeContext) -> list[PlotTrace]:
+        fast_period = int(vctx.params.get("fast_period", 12))
+        slow_period = int(vctx.params.get("slow_period", 26))
+        signal_period = int(vctx.params.get("signal_period", 9))
+        fast_ema = ema(vctx.closes, fast_period)
+        slow_ema = ema(vctx.closes, slow_period)
+        macd_line = fast_ema - slow_ema
+        signal_line = ema(macd_line, signal_period)
+        histogram = macd_line - signal_line
+        return [
+            PlotTrace(
+                name="MACD",
+                kind="line",
+                data=nan_array_to_jsonable(macd_line),
+                panel="own",
+                color="#5c7cfa",
+            ),
+            PlotTrace(
+                name="Signal",
+                kind="line",
+                data=nan_array_to_jsonable(signal_line),
+                panel="own",
+                color="#f76707",
+            ),
+            PlotTrace(
+                name="Histogram",
+                kind="histogram",
+                data=nan_array_to_jsonable(histogram),
+                panel="own",
+                color="#868e96",
+                reference_lines=(("0", 0.0, "#868e96"),),
+            ),
+        ]

@@ -18,6 +18,11 @@ from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ..indicators import ema
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ...core.types.visualize import (
+    PlotTrace,
+    VisualizeContext,
+    nan_array_to_jsonable,
+)
 
 
 class EMACrossoverAlgorithm(Algorithm):
@@ -53,6 +58,7 @@ class EMACrossoverAlgorithm(Algorithm):
                 ),
             ],
             author="Daytrader built-in",
+            suitable_regimes=["bull", "bear"],
         )
 
     def warmup_bars(self) -> int:
@@ -110,3 +116,25 @@ class EMACrossoverAlgorithm(Algorithm):
             )
 
         return None
+
+    def visualize(self, vctx: VisualizeContext) -> list[PlotTrace]:
+        fast_period = int(vctx.params.get("fast_period", 9))
+        slow_period = int(vctx.params.get("slow_period", 21))
+        fast = ema(vctx.closes, fast_period)
+        slow = ema(vctx.closes, slow_period)
+        return [
+            PlotTrace(
+                name=f"Fast EMA ({fast_period})",
+                kind="line",
+                data=nan_array_to_jsonable(fast),
+                panel="price",
+                color="#22b8cf",
+            ),
+            PlotTrace(
+                name=f"Slow EMA ({slow_period})",
+                kind="line",
+                data=nan_array_to_jsonable(slow),
+                panel="price",
+                color="#f76707",
+            ),
+        ]

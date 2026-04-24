@@ -123,18 +123,25 @@ class CompositeAlgorithm(Algorithm):
         if root_signal is None:
             return None
 
-        # Build attribution tree
+        # Build attribution tree covering every DAG node.
         attribution = self._build_attribution(self._dag.root_node_id, node_signals)
 
-        return ctx.emit(
+        # Emit directly so the full attribution tree is preserved on the Signal.
+        # (``ctx.emit`` wraps a fresh single-node tree that would discard ours.)
+        signal = Signal.new(
+            symbol_key=ctx.symbol.key,
             score=root_signal.score,
             confidence=root_signal.confidence,
+            source=f"dag:{self._dag.id}",
             reason=f"DAG:{self._dag.id} → {root_signal.reason}",
+            attribution=attribution,
             metadata={
                 "dag_id": self._dag.id,
-                "dag_attribution": attribution.node_id if attribution else None,
+                "dag_attribution_root": attribution.node_id if attribution else None,
             },
         )
+        ctx.emit_fn(signal)
+        return signal
 
     # ----- internal -------------------------------------------------------
 

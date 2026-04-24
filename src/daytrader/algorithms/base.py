@@ -14,6 +14,7 @@ from typing import Any
 
 from ..core.context import AlgorithmContext
 from ..core.types.signals import Signal
+from ..core.types.visualize import PlotTrace, VisualizeContext
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,16 @@ class AlgorithmParam:
 
 @dataclass(frozen=True)
 class AlgorithmManifest:
-    """Metadata describing an algorithm plugin."""
+    """Metadata describing an algorithm plugin.
+
+    ``suitable_regimes`` lets algorithms declare where they shine:
+    a trend-follower sets ``["bull", "bear"]``, a mean-reverter sets
+    ``["sideways"]``. The Strategy Lab warns when you run an algorithm
+    outside its suitable regimes and the live loop can optionally gate
+    execution on regime match (driven by the Regime Badge service).
+    Default ``None`` means "no opinion" — the algorithm is expected to
+    handle all regimes.
+    """
 
     id: str
     name: str
@@ -44,6 +54,8 @@ class AlgorithmManifest:
     timeframes: list[str] = field(default_factory=lambda: ["1d"])
     params: list[AlgorithmParam] = field(default_factory=list)
     author: str = ""
+    # Empty / None = agnostic. Non-empty subset of {"bull","bear","sideways"}.
+    suitable_regimes: list[str] | None = None
 
     def param_defaults(self) -> dict[str, Any]:
         """Return a dict of parameter names to their default values."""
@@ -79,3 +91,16 @@ class Algorithm(ABC):
         moving average).
         """
         return 0
+
+    def visualize(self, vctx: VisualizeContext) -> list[PlotTrace]:
+        """Return chart traces describing this algorithm's native view.
+
+        Default: no traces. The Charts Workbench falls back to plotting
+        the signal score / confidence time-series for algos that don't
+        override this.
+
+        Override to expose your indicator internals — MACD histogram,
+        RSI line, Bollinger bands, etc. Traces align element-wise with
+        the OHLCV arrays passed in ``vctx``.
+        """
+        return []

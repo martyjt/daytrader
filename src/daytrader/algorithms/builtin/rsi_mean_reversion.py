@@ -20,6 +20,11 @@ from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ..indicators import rsi as compute_rsi
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ...core.types.visualize import (
+    PlotTrace,
+    VisualizeContext,
+    nan_array_to_jsonable,
+)
 
 
 class RSIMeanReversionAlgorithm(Algorithm):
@@ -63,6 +68,7 @@ class RSIMeanReversionAlgorithm(Algorithm):
                 ),
             ],
             author="Daytrader built-in",
+            suitable_regimes=["sideways"],
         )
 
     def warmup_bars(self) -> int:
@@ -115,3 +121,25 @@ class RSIMeanReversionAlgorithm(Algorithm):
 
         # Neutral zone — no signal
         return None
+
+    def visualize(self, vctx: VisualizeContext) -> list[PlotTrace]:
+        period = int(vctx.params.get("period", 14))
+        oversold = float(vctx.params.get("oversold", 30.0))
+        overbought = float(vctx.params.get("overbought", 70.0))
+        rsi_line = compute_rsi(vctx.closes, period)
+        return [
+            PlotTrace(
+                name=f"RSI ({period})",
+                kind="line",
+                data=nan_array_to_jsonable(rsi_line),
+                panel="own",
+                color="#5c7cfa",
+                y_min=0.0,
+                y_max=100.0,
+                reference_lines=(
+                    (f"Overbought {overbought:.0f}", overbought, "#fa5252"),
+                    ("Midline 50", 50.0, "#868e96"),
+                    (f"Oversold {oversold:.0f}", oversold, "#40c057"),
+                ),
+            ),
+        ]

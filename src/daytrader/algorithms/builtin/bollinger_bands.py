@@ -15,6 +15,11 @@ from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ..indicators import sma, rolling_std
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ...core.types.visualize import (
+    PlotTrace,
+    VisualizeContext,
+    nan_array_to_jsonable,
+)
 
 
 class BollingerBandsAlgorithm(Algorithm):
@@ -56,6 +61,7 @@ class BollingerBandsAlgorithm(Algorithm):
                 ),
             ],
             author="Daytrader built-in",
+            suitable_regimes=["sideways"],
         )
 
     def warmup_bars(self) -> int:
@@ -123,3 +129,36 @@ class BollingerBandsAlgorithm(Algorithm):
 
         # Price inside bands — no signal
         return None
+
+    def visualize(self, vctx: VisualizeContext) -> list[PlotTrace]:
+        period = int(vctx.params.get("period", self._period))
+        std_dev = float(vctx.params.get("std_dev", self._std_dev))
+        mid = sma(vctx.closes, period)
+        std = rolling_std(vctx.closes, period)
+        upper = mid + std_dev * std
+        lower = mid - std_dev * std
+        return [
+            PlotTrace(
+                name=f"BB Upper ({period}, {std_dev}σ)",
+                kind="line",
+                data=nan_array_to_jsonable(upper),
+                panel="price",
+                color="#fa5252",
+                dash="dashed",
+            ),
+            PlotTrace(
+                name=f"BB Middle (SMA {period})",
+                kind="line",
+                data=nan_array_to_jsonable(mid),
+                panel="price",
+                color="#868e96",
+            ),
+            PlotTrace(
+                name=f"BB Lower ({period}, {std_dev}σ)",
+                kind="line",
+                data=nan_array_to_jsonable(lower),
+                panel="price",
+                color="#40c057",
+                dash="dashed",
+            ),
+        ]

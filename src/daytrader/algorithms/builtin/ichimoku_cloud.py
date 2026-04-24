@@ -13,6 +13,11 @@ from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ..indicators import ichimoku_lines
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ...core.types.visualize import (
+    PlotTrace,
+    VisualizeContext,
+    nan_array_to_jsonable,
+)
 
 
 class IchimokuCloudAlgorithm(Algorithm):
@@ -52,6 +57,7 @@ class IchimokuCloudAlgorithm(Algorithm):
                 AlgorithmParam("displacement", "int", self._displacement, min=10, max=52, description="Cloud displacement"),
             ],
             author="Daytrader built-in",
+            suitable_regimes=["bull", "bear"],
         )
 
     def warmup_bars(self) -> int:
@@ -125,3 +131,55 @@ class IchimokuCloudAlgorithm(Algorithm):
                 f"tenkan={t:.2f}, kijun={k:.2f}"
             ),
         )
+
+    def visualize(self, vctx: VisualizeContext) -> list[PlotTrace]:
+        tenkan_period = int(vctx.params.get("tenkan_period", self._tenkan_period))
+        kijun_period = int(vctx.params.get("kijun_period", self._kijun_period))
+        span_b_period = int(vctx.params.get("span_b_period", self._span_b_period))
+        displacement = int(vctx.params.get("displacement", self._displacement))
+
+        tenkan, kijun, span_a, span_b = ichimoku_lines(
+            vctx.highs, vctx.lows,
+            tenkan_period, kijun_period, span_b_period,
+        )
+        # Shift the cloud forward by `displacement` bars to match how the
+        # algorithm consumes it (displaced forward from the source bars).
+        n = len(vctx.closes)
+        disp_a = np.full(n, np.nan)
+        disp_b = np.full(n, np.nan)
+        if n > displacement:
+            disp_a[displacement:] = span_a[: n - displacement]
+            disp_b[displacement:] = span_b[: n - displacement]
+
+        # Band between span_a and span_b is the "cloud".
+        band_data: list[list[float | None]] = []
+        for a, b in zip(disp_a, disp_b):
+            if a != a or b != b:  # NaN
+                band_data.append([None, None])
+            else:
+                band_data.append([float(max(a, b)), float(min(a, b))])
+
+        return [
+            PlotTrace(
+                name=f"Tenkan ({tenkan_period})",
+                kind="line",
+                data=nan_array_to_jsonable(tenkan),
+                panel="price",
+                color="#22b8cf",
+            ),
+            PlotTrace(
+                name=f"Kijun ({kijun_period})",
+                kind="line",
+                data=nan_array_to_jsonable(kijun),
+                panel="price",
+                color="#f76707",
+            ),
+            PlotTrace(
+                name="Cloud (Senkou A/B)",
+                kind="band",
+                data=band_data,
+                panel="price",
+                color="#5c7cfa",
+                opacity=0.2,
+            ),
+        ]
