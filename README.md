@@ -84,3 +84,54 @@ Layered, plugin-first, multi-tenant from day one:
 | **3** | DAG composer (tier 2) · full algo library · regime-switching HMM |
 | **4** | Live execution (Binance, Alpaca) · global risk layer 3 · kill-switch · journal |
 | **5** | Deep learning (PyTorch) · advanced research tooling |
+| **6** | Charts Workbench · data expansion (FRED/NewsAPI/Binance public/Alpha Vantage/Twelve Data) · composite param exposure · data cache |
+| **7** | Reinforcement learning (PPO, SAC, Bandit Allocator) · Exploration Agent · drift monitor · shadow tournament · portfolio backtest · alert center · live regime watcher |
+
+## Feature map (current)
+
+14 pages in the left nav:
+
+| Page | Job |
+|---|---|
+| Home | Dashboard — personas, equity, regime, alerts, top discoveries |
+| Personas | Create / manage personas; bind to a saved strategy |
+| Persona detail (`/persona/<id>`) | Single persona: bound strategy + activity |
+| Strategy Lab | The Ritual (backtest → walk-forward → paper → promote) with `?strategy=<uuid>` preload |
+| Strategies | Save & reuse named algo+params+symbol+venue recipes |
+| Charts | Multi-algorithm charting workbench with agreement ribbon + DAG attribution |
+| DAG Composer | Visual DAG editor for composite strategies |
+| Bandit Builder | Thompson-sampling allocator composer — saves YAML, hot-registers |
+| Universes | Reusable symbol watchlists for Portfolio + Shadow |
+| Plugins | Algorithm library · single-file plugin upload · rescan |
+| Risk Center | Kill switch · per-persona risk · cross-persona correlation monitor |
+| Signals | Live auto-refreshing feed of every signal across personas |
+| Journal | Full event log with attribution drawer · CSV export |
+| Research Lab | 7 tabs: Model Comparison · Parameter Sweep · Feature Attribution · WF Stability · **Discoveries** · **Shadow** · **Portfolio** |
+| Data Cache | Parquet cache inspector + clear |
+
+### Always-visible shell widgets
+
+- **Regime badge** — live HMM-inferred regime (bull/bear/sideways) with 30-min auto-refresh
+- **Alerts bell** — in-process ring buffer; regime changes, drift, winners, correlation breaches
+- **Kill-all** — global emergency halt
+
+### Background workers (opt-in via env)
+
+- **RegimeWatcher** — periodic HMM refresh (default 30 min, always on)
+- **ExplorationScheduler** — periodic feature-lift scans (`EXPLORATION_SCHEDULE_HOURS=6`)
+- **ShadowScheduler** — periodic tournament runs (`SHADOW_SCHEDULE_HOURS=24`)
+
+## Optional extras
+
+```bash
+pip install daytrader[rl]         # stable-baselines3 + gymnasium (PPO, SAC)
+pip install daytrader[dl]         # PyTorch (LSTM/Transformer/CNN-LSTM)
+pip install daytrader[sentiment]  # VADER inline scoring for NewsAPI
+pip install daytrader[dev]        # pytest + ruff + mypy
+```
+
+## Environment
+
+See `.env.example`. Most adapters are key-gated and skip cleanly when the
+key is absent. Two adapters (`yfinance`, `binance_public`) work with no
+configuration.

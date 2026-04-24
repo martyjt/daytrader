@@ -67,8 +67,11 @@ def render_param_form(
 
 def _render_widget(param: AlgorithmParam, values: dict[str, Any]) -> None:
     """Render a single parameter widget and bind its value to the dict."""
-    # Initialize with default
+    # Seed with the manifest default unless the caller pre-populated a
+    # value (e.g. Strategy Lab loading a saved strategy recipe). Widgets
+    # then render using the current value, not the manifest default.
     values.setdefault(param.name, param.default)
+    initial = values[param.name]
 
     # For composite child params the internal name is ``{node}__{param}``;
     # show just the final param for a clean label.
@@ -76,25 +79,25 @@ def _render_widget(param: AlgorithmParam, values: dict[str, Any]) -> None:
     label = display_name.replace("_", " ").title()
 
     if param.type == "bool":
-        sw = ui.switch(label, value=param.default)
+        sw = ui.switch(label, value=bool(initial))
         sw.on_value_change(lambda e, n=param.name: values.__setitem__(n, e.value))
 
     elif param.type == "str" and param.choices:
         sel = ui.select(
             param.choices,
-            value=param.default,
+            value=initial,
             label=label,
         ).classes("min-w-[120px]")
         sel.on_value_change(lambda e, n=param.name: values.__setitem__(n, e.value))
 
     elif param.type == "str":
-        inp = ui.input(label, value=str(param.default))
+        inp = ui.input(label, value=str(initial))
         inp.on_value_change(lambda e, n=param.name: values.__setitem__(n, e.value))
 
     elif param.type == "int":
         num = ui.number(
             label,
-            value=param.default,
+            value=initial,
             min=param.min,
             max=param.max,
             step=1,
@@ -106,7 +109,7 @@ def _render_widget(param: AlgorithmParam, values: dict[str, Any]) -> None:
     else:  # float
         num = ui.number(
             label,
-            value=param.default,
+            value=initial,
             min=param.min,
             max=param.max,
             step=param.step or 0.01,
