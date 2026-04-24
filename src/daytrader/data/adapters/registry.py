@@ -32,30 +32,65 @@ class AdapterRegistry:
 
     @classmethod
     def auto_register(cls) -> None:
-        """Register all built-in adapters."""
+        """Register all built-in adapters.
+
+        Unkeyed adapters (yfinance, binance_public) always register.
+        Keyed adapters register only when their API key is set in env.
+        """
         from .yfinance_adapter import YFinanceAdapter
 
         if "yfinance" not in cls._adapters:
             cls.register(YFinanceAdapter())
 
-        if "alpaca" not in cls._adapters:
-            try:
-                from ...core.settings import get_settings
+        if "binance_public" not in cls._adapters:
+            from .binance_public_adapter import BinancePublicAdapter
 
-                settings = get_settings()
-                api_key = settings.alpaca_api_key.get_secret_value()
-                if api_key:
-                    from .alpaca_adapter import AlpacaAdapter
+            cls.register(BinancePublicAdapter())
 
-                    cls.register(
-                        AlpacaAdapter(
-                            api_key=api_key,
-                            api_secret=settings.alpaca_api_secret.get_secret_value(),
-                            paper=settings.alpaca_paper,
+        # Load settings once for conditional registrations.
+        try:
+            from ...core.settings import get_settings
+
+            settings = get_settings()
+        except Exception:
+            settings = None
+
+        if settings is not None:
+            if "alpaca" not in cls._adapters:
+                try:
+                    api_key = settings.alpaca_api_key.get_secret_value()
+                    if api_key:
+                        from .alpaca_adapter import AlpacaAdapter
+
+                        cls.register(
+                            AlpacaAdapter(
+                                api_key=api_key,
+                                api_secret=settings.alpaca_api_secret.get_secret_value(),
+                                paper=settings.alpaca_paper,
+                            )
                         )
-                    )
-            except Exception:
-                pass  # Alpaca not configured
+                except Exception:
+                    pass  # Alpaca not configured
+
+            if "alpha_vantage" not in cls._adapters:
+                try:
+                    av_key = settings.alpha_vantage_api_key.get_secret_value()
+                    if av_key:
+                        from .alpha_vantage_adapter import AlphaVantageAdapter
+
+                        cls.register(AlphaVantageAdapter(api_key=av_key))
+                except Exception:
+                    pass
+
+            if "twelve_data" not in cls._adapters:
+                try:
+                    td_key = settings.twelve_data_api_key.get_secret_value()
+                    if td_key:
+                        from .twelve_data_adapter import TwelveDataAdapter
+
+                        cls.register(TwelveDataAdapter(api_key=td_key))
+                except Exception:
+                    pass
 
     @classmethod
     def clear(cls) -> None:
