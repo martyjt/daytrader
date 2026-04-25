@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     Numeric,
@@ -423,4 +424,44 @@ class TenantPluginModel(TenantMixin, Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AuditLogModel(Base):
+    """Tenant audit trail (Phase 7 — productionization).
+
+    Every meaningful tenant-affecting action records a row here:
+    auth events, invite issuance/acceptance, persona/broker/plugin CRUD,
+    kill-switch activation. ``tenant_id`` and ``user_id`` are nullable
+    so login failures (no authenticated session) and admin actions on
+    other tenants can still be recorded.
+
+    The composite ``(tenant_id, created_at)`` index supports the common
+    query pattern of "the last N events for this tenant" without a sort.
+    Cheap to add now, expensive to retrofit if the table grows.
+    """
+
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("ix_audit_log_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("tenants.id"), nullable=True, default=None, index=True
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=True, default=None, index=True
+    )
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    resource_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default=None, index=True
+    )
+    resource_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, default=None
+    )
+    # ``metadata`` is reserved by SQLAlchemy's Declarative API; use ``extra``.
+    extra: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
     )

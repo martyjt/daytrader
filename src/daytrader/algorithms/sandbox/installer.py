@@ -33,6 +33,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from ...core import audit
 from ...storage.database import get_session
 from ...storage.models import TenantPluginModel
 from ..registry import AlgorithmRegistry
@@ -184,6 +185,19 @@ async def install_plugin(
         "Installed plugin %s for tenant %s (sha256=%s)",
         algo_id, tenant_id, sha256[:12],
     )
+    await audit.record(
+        "plugin.install",
+        resource_type="plugin",
+        resource_id=plugin_id,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        extra={
+            "algorithm_id": algo_id,
+            "name": manifest.name,
+            "filename": name,
+            "sha256": sha256,
+        },
+    )
     return InstallResult(
         plugin_id=plugin_id,
         algorithm_id=algo_id,
@@ -306,6 +320,12 @@ async def set_plugin_enabled(
             except PluginRuntimeError:
                 pass
 
+    await audit.record(
+        "plugin.enable" if enabled else "plugin.disable",
+        resource_type="plugin",
+        resource_id=algorithm_id,
+        tenant_id=tenant_id,
+    )
     return True
 
 
@@ -374,6 +394,13 @@ async def uninstall_plugin(
     except OSError:
         logger.warning("Could not delete plugin file %s", plugin_path)
 
+    await audit.record(
+        "plugin.uninstall",
+        resource_type="plugin",
+        resource_id=algorithm_id,
+        tenant_id=tenant_id,
+        extra={"filename": filename},
+    )
     return True
 
 

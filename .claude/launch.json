@@ -5,7 +5,10 @@
       "name": "daytrader",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "daytrader"],
-      "port": 8080
+      "port": 8090,
+      "env": {
+        "APP_PORT": "8090"
+      }
     }
   ]
 }

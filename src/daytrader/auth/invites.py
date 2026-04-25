@@ -13,6 +13,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from ..core import audit
 from ..core.settings import get_settings
 from ..storage.database import get_session
 from ..storage.models import UserInviteModel, UserModel
@@ -59,6 +60,15 @@ async def create_invite(
         )
         session.add(invite)
         await session.commit()
+        invite_id = invite.id
+    await audit.record(
+        "invite.create",
+        resource_type="invite",
+        resource_id=invite_id,
+        tenant_id=tenant_id,
+        user_id=invited_by,
+        extra={"email": email.strip().lower(), "role": role},
+    )
     return token
 
 
@@ -134,4 +144,15 @@ async def redeem_invite(
 
         invite.used_at = datetime.now(timezone.utc)
         await session.commit()
-        return user.id
+        new_user_id = user.id
+        new_tenant_id = tenant_id
+
+    await audit.record(
+        "invite.use",
+        resource_type="user",
+        resource_id=new_user_id,
+        tenant_id=new_tenant_id,
+        user_id=new_user_id,
+        extra={"role": invite.role},
+    )
+    return new_user_id

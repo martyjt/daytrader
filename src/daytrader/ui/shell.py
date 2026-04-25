@@ -33,6 +33,7 @@ NAV_ITEMS: list[tuple[str, str, str]] = [
 ADMIN_NAV_ITEMS: list[tuple[str, str, str]] = [
     ("Users", "/admin/users", "manage_accounts"),
     ("Tenants", "/admin/tenants", "domain"),
+    ("Audit", "/admin/audit", "fact_check"),
 ]
 
 

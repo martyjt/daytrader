@@ -11,6 +11,7 @@ from typing import Any, Sequence
 from uuid import UUID
 
 from ..auth.session import current_tenant_id
+from ..core import audit
 from ..core.context import tenant_scope
 from ..storage.database import get_session
 from ..storage.models import PersonaModel
@@ -69,7 +70,13 @@ async def create_persona(
                 risk_profile=risk_profile,
             )
             await session.commit()
-            return persona
+    await audit.record(
+        "persona.create",
+        resource_type="persona",
+        resource_id=persona.id,
+        extra={"name": name, "mode": mode, "asset_class": asset_class},
+    )
+    return persona
 
 
 async def delete_persona(persona_id: UUID) -> bool:
@@ -78,7 +85,13 @@ async def delete_persona(persona_id: UUID) -> bool:
         with tenant_scope(_tenant_id()):
             result = await repo.delete(persona_id)
             await session.commit()
-            return result
+    if result:
+        await audit.record(
+            "persona.delete",
+            resource_type="persona",
+            resource_id=persona_id,
+        )
+    return result
 
 
 async def count_personas() -> int:
@@ -98,7 +111,13 @@ async def promote_to_paper(persona_id: UUID, final_equity: Decimal | None = None
         with tenant_scope(_tenant_id()):
             persona = await repo.update(persona_id, **updates)
             await session.commit()
-            return persona
+    await audit.record(
+        "persona.update",
+        resource_type="persona",
+        resource_id=persona_id,
+        extra={"mode_change": "backtest_to_paper"},
+    )
+    return persona
 
 
 async def run_backtest_service(
@@ -261,6 +280,12 @@ async def promote_to_live(
                 writer = JournalWriter()
                 await writer.log_mode_change(
                     _tenant_id(), persona_id, "paper", "live"
+                )
+                await audit.record(
+                    "persona.update",
+                    resource_type="persona",
+                    resource_id=persona_id,
+                    extra={"mode_change": "paper_to_live", "venue": venue},
                 )
 
             # Re-fetch to get updated state

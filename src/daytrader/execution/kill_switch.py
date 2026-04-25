@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from ..core import audit
 from ..core.context import tenant_scope
 from ..storage.database import get_session
 from ..storage.models import PersonaModel
@@ -58,6 +59,12 @@ class KillSwitch:
 
         if self._journal:
             await self._journal.log_kill_switch(tenant_id, reason)
+
+        await audit.record(
+            "kill_switch.activate",
+            tenant_id=tenant_id,
+            extra={"reason": reason, "personas_paused": count},
+        )
 
         return count
 

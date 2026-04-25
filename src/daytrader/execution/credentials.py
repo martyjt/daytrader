@@ -26,6 +26,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from ..core import audit
 from ..core.context import tenant_scope
 from ..core.crypto import get_codec
 from ..storage.database import get_session
@@ -147,10 +148,18 @@ async def save_credential(
         )
         session.add(new_row)
         await session.commit()
+        new_id = new_row.id
         # Force the per-tenant adapter cache to rebuild on the next call.
         from .registry import ExecutionRegistry
         ExecutionRegistry.invalidate_tenant(tenant_id)
-        return new_row.id
+    await audit.record(
+        "broker_creds.save",
+        resource_type="broker_credential",
+        resource_id=new_id,
+        tenant_id=tenant_id,
+        extra={"broker_name": name, "is_testnet": is_testnet},
+    )
+    return new_id
 
 
 async def delete_credential(*, tenant_id: UUID, credential_id: UUID) -> bool:
@@ -166,11 +175,19 @@ async def delete_credential(*, tenant_id: UUID, credential_id: UUID) -> bool:
             ).scalar_one_or_none()
             if row is None:
                 return False
+            broker_name = row.broker_name
             await session.delete(row)
             await session.commit()
 
     from .registry import ExecutionRegistry
     ExecutionRegistry.invalidate_tenant(tenant_id)
+    await audit.record(
+        "broker_creds.delete",
+        resource_type="broker_credential",
+        resource_id=credential_id,
+        tenant_id=tenant_id,
+        extra={"broker_name": broker_name},
+    )
     return True
 
 

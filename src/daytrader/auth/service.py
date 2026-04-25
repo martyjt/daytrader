@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core import audit
 from ..storage.database import get_session
 from ..storage.models import UserModel
 from .password import hash_password, verify_password
@@ -26,21 +27,50 @@ async def authenticate(email: str, password: str) -> SessionUser:
     Raises ``AuthError`` on missing user, wrong password, or deactivated account.
     Updates ``last_login_at`` on success.
     """
+    email_norm = email.strip().lower()
     async with get_session() as session:
         user = (
             await session.execute(
-                select(UserModel).where(UserModel.email == email.strip().lower())
+                select(UserModel).where(UserModel.email == email_norm)
             )
         ).scalar_one_or_none()
         if user is None:
+            await audit.record(
+                "login.failure",
+                extra={"email": email_norm, "reason": "no_user"},
+            )
             raise AuthError("Invalid email or password")
         if not user.is_active:
+            await audit.record(
+                "login.failure",
+                resource_type="user",
+                resource_id=user.id,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                extra={"email": email_norm, "reason": "deactivated"},
+            )
             raise AuthError("Account is deactivated — contact an administrator")
         if not verify_password(password, user.password_hash):
+            await audit.record(
+                "login.failure",
+                resource_type="user",
+                resource_id=user.id,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                extra={"email": email_norm, "reason": "bad_password"},
+            )
             raise AuthError("Invalid email or password")
 
         user.last_login_at = datetime.now(timezone.utc)
         await session.commit()
+
+        await audit.record(
+            "login.success",
+            resource_type="user",
+            resource_id=user.id,
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+        )
 
         return SessionUser(
             user_id=user.id,
