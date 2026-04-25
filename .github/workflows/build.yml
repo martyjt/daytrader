@@ -1,0 +1,114 @@
+name: Build and publish image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      # Spin up Postgres so the test suite exercises the prod DB layer.
+      # SQLite-in-memory still covers most paths via aiosqlite, but tests
+      # that touch tenant_plugins / migration order want the real thing.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: daytrader
+          POSTGRES_PASSWORD: daytrader
+          POSTGRES_DB: daytrader
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U daytrader"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install with dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pytest
+        env:
+          # The default settings in code use SQLite; existing tests
+          # bring their own engine fixtures. CI's Postgres service is
+          # there for the migration-on-real-DB sanity job below.
+          PYTHONUNBUFFERED: "1"
+        run: pytest -q
+
+      - name: Verify alembic upgrades against Postgres
+        env:
+          DATABASE_URL: postgresql+asyncpg://daytrader:daytrader@localhost:5432/daytrader
+        run: |
+          alembic upgrade head
+          alembic current
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # :main is what Watchtower polls. :latest is also published
+          # on default-branch builds. :sha-<short> + :v* tags exist for
+          # rollback / pinning.
+          tags: |
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+
+      - name: Compute build timestamp
+        id: stamp
+        run: echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Bake commit + build time into the image so the running
+          # container can show which version is live.
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+            APP_BUILT_AT=${{ steps.stamp.outputs.built_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

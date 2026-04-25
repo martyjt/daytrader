@@ -62,6 +62,9 @@ dev = [
     "types-pyyaml",
     "types-passlib",
     "aiosqlite>=0.20",
+    # scripts/deploy_remote.py uses paramiko; only needed locally to
+    # push files / run commands on the deployment host.
+    "paramiko>=3.4",
 ]
 
 # Phase 5: deep learning algorithms.

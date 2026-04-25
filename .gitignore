@@ -21,6 +21,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+!.env.deploy.example
 
 # NiceGUI server-side session storage (per-user signed cookies)
 .nicegui/

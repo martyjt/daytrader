@@ -1,6 +1,7 @@
 """Alembic environment configuration for async SQLAlchemy."""
 
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -13,6 +14,12 @@ from daytrader.storage import models as _models  # noqa: F401 — side-effect im
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Production deploys set DATABASE_URL via env so we don't ship secrets in
+# alembic.ini. The .ini value is the dev fallback.
+_env_url = os.environ.get("DATABASE_URL")
+if _env_url:
+    config.set_main_option("sqlalchemy.url", _env_url)
 
 target_metadata = Base.metadata
 
