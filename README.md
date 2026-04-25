@@ -33,12 +33,20 @@ ccxt · alpaca-py · yfinance · AG Grid Enterprise · AG Charts Enterprise.
 
 ## Quickstart — Docker (recommended)
 
+The default `docker-compose.yml` is the **production** stack (pulls a
+prebuilt image from GHCR). For local development with a build-from-source
+app + redis + mlflow, use the dev compose instead:
+
 ```bash
 cp .env.example .env
 # edit .env, especially APP_SECRET_KEY, APP_ENCRYPTION_KEY, AG_GRID_LICENSE_KEY
-docker compose up -d
+docker compose -f docker-compose.dev.yml up -d
 # open http://localhost:8080
 ```
+
+For deploying to a server, see [DEPLOYMENT.md](DEPLOYMENT.md). The live
+deployment runs at <https://daytrader.zimpla.nz> (auto-updated by Watchtower
+within 5 minutes of every push to `main`).
 
 ## Quickstart — native (Windows)
 
