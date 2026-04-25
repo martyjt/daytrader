@@ -16,7 +16,8 @@ from ..shell import page_layout
 
 @ui.page("/universes")
 async def universes_page() -> None:
-    page_layout("Symbol Universes")
+    if not page_layout("Symbol Universes"):
+        return
 
     ui.label("Symbol Universes").classes("text-h5 q-pb-xs")
     ui.label(

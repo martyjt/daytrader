@@ -36,10 +36,15 @@ class AppSettings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     mlflow_tracking_uri: str = "http://localhost:5000"
 
-    # Phase 0 auth stub
+    # Phase 0 auth stub (still used as the seed tenant for the super admin)
     default_tenant_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
     default_tenant_name: str = "default"
     default_user_email: str = "operator@local"
+
+    # Phase 1 — bootstrap super admin (rotated by user after first login)
+    bootstrap_admin_email: str = "admin@daytrader.local"
+    bootstrap_admin_password: SecretStr = SecretStr("DayTrader2026$")
+    invite_token_ttl_hours: int = 72
 
     # AG Grid Enterprise
     ag_grid_license_key: str = ""

@@ -32,7 +32,8 @@ _VALID_FILENAME = re.compile(r"^[A-Za-z0-9_\-]+\.py$")
 
 @ui.page("/plugins")
 async def plugins_page() -> None:
-    page_layout("Plugins")
+    if not page_layout("Plugins"):
+        return
 
     ui.label("Algorithm Library").classes("text-h5 q-pb-sm")
     ui.label(

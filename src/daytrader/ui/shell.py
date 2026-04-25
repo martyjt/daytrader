@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from nicegui import ui
 
+from ..auth.roles import ROLE_SUPER_ADMIN
+from ..auth.session import current_session, require_role
+from .middleware import ensure_authenticated
+
 NAV_ITEMS: list[tuple[str, str, str]] = [
     ("Home", "/", "dashboard"),
     ("Personas", "/personas", "smart_toy"),
@@ -25,9 +29,24 @@ NAV_ITEMS: list[tuple[str, str, str]] = [
     ("Data Cache", "/cache", "dataset"),
 ]
 
+ADMIN_NAV_ITEMS: list[tuple[str, str, str]] = [
+    ("Users", "/admin/users", "manage_accounts"),
+]
 
-def page_layout(title: str) -> None:
-    """Build the shared page shell: dark theme, header bar, sidebar nav."""
+
+def page_layout(title: str) -> bool:
+    """Build the shared page shell. Returns ``False`` when redirected to /login.
+
+    Every page MUST early-return on a False return value:
+
+        async def my_page() -> None:
+            if not page_layout("My page"):
+                return
+            ...
+    """
+    if not ensure_authenticated():
+        return False
+
     ui.dark_mode(True)
     ui.colors(primary="#5c7cfa", secondary="#495057", accent="#22b8cf")
 
@@ -44,6 +63,7 @@ def page_layout(title: str) -> None:
         with ui.row().classes("items-center gap-3 no-wrap"):
             _render_regime_badge()
             _render_alerts_badge()
+            _render_user_menu()
             ui.button(
                 "KILL ALL",
                 color="negative",
@@ -61,6 +81,36 @@ def page_layout(title: str) -> None:
                 icon=icon,
                 on_click=lambda p=path: ui.navigate.to(p),
             ).props("flat align=left no-caps").classes("w-full")
+
+        if require_role(ROLE_SUPER_ADMIN):
+            ui.separator().classes("q-my-sm")
+            ui.label("ADMIN").classes("text-overline text-grey-7 q-pa-sm")
+            for label, path, icon in ADMIN_NAV_ITEMS:
+                ui.button(
+                    label,
+                    icon=icon,
+                    on_click=lambda p=path: ui.navigate.to(p),
+                ).props("flat align=left no-caps").classes("w-full")
+    return True
+
+
+def _render_user_menu() -> None:
+    """Email + dropdown with logout."""
+    sess = current_session()
+    if sess is None:
+        return
+    label_text = sess.display_name or sess.email
+    with ui.button(icon="account_circle").props("flat dense round").classes(
+        "text-grey-4"
+    ):
+        with ui.menu():
+            with ui.row().classes("items-center q-pa-sm gap-2"):
+                ui.icon("person").classes("text-grey-5")
+                with ui.column().classes("gap-0"):
+                    ui.label(label_text).classes("text-body2")
+                    ui.label(sess.role).classes("text-caption text-grey-6")
+            ui.separator()
+            ui.menu_item("Sign out", on_click=lambda: ui.navigate.to("/logout"))
 
 
 _REGIME_COLORS = {

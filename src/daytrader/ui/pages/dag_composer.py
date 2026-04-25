@@ -215,7 +215,8 @@ function emitEvent(name, data) {
 
 @ui.page("/dag-composer")
 async def dag_composer_page() -> None:
-    page_layout("DAG Composer")
+    if not page_layout("DAG Composer"):
+        return
 
     # ----- State ----------------------------------------------------------
     _state: dict[str, Any] = {

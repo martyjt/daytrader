@@ -16,7 +16,8 @@ from ..shell import page_layout
 
 @ui.page("/signals")
 async def signal_feed_page() -> None:
-    page_layout("Live Signal Feed")
+    if not page_layout("Live Signal Feed"):
+        return
 
     ui.label("Live Signal Feed").classes("text-h5 q-pb-xs")
     ui.label(

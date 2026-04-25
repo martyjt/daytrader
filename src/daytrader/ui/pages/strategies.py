@@ -18,7 +18,8 @@ from ..shell import page_layout
 
 @ui.page("/strategies")
 async def strategies_page() -> None:
-    page_layout("Strategy Library")
+    if not page_layout("Strategy Library"):
+        return
 
     from ...algorithms.registry import AlgorithmRegistry
     from ..services import (

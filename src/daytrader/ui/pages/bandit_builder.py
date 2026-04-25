@@ -31,7 +31,8 @@ _VALID_ID = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 @ui.page("/bandit-builder")
 async def bandit_builder_page() -> None:
-    page_layout("Bandit Builder")
+    if not page_layout("Bandit Builder"):
+        return
 
     from ...algorithms.registry import AlgorithmRegistry
 

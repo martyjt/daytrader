@@ -17,7 +17,8 @@ from ..shell import page_layout, persona_card
 
 @ui.page("/personas")
 async def personas_page() -> None:
-    page_layout("Personas")
+    if not page_layout("Personas"):
+        return
 
     container = ui.row().classes("w-full gap-4 flex-wrap")
 
@@ -124,12 +125,16 @@ async def personas_page() -> None:
                             }
 
                     # Use the richer service that supports meta.
+                    from ...auth.session import current_tenant_id
                     from ...core.context import tenant_scope
-                    from ...core.settings import get_settings
                     from ...storage.database import get_session
                     from ...storage.models import PersonaModel
 
-                    tid = get_settings().default_tenant_id
+                    tid = current_tenant_id()
+                    if tid is None:
+                        ui.notify("Session expired — please sign in again", type="negative")
+                        ui.navigate.to("/login")
+                        return
                     async with get_session() as session:
                         with tenant_scope(tid):
                             row = PersonaModel(

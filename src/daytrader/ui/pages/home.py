@@ -15,7 +15,8 @@ from ..shell import page_layout, persona_card, stat_card
 
 @ui.page("/")
 async def home_page() -> None:
-    page_layout("What's happening today?")
+    if not page_layout("What's happening today?"):
+        return
 
     personas = await list_personas()
     total_equity = sum(float(p.current_equity or 0) for p in personas)

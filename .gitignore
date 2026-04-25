@@ -22,6 +22,9 @@ htmlcov/
 .env.*
 !.env.example
 
+# NiceGUI server-side session storage (per-user signed cookies)
+.nicegui/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -49,7 +49,8 @@ def _entries_to_csv(entries, persona_map: dict[str, str]) -> str:
 
 @ui.page("/journal")
 async def journal_page() -> None:
-    page_layout("Journal")
+    if not page_layout("Journal"):
+        return
 
     # ---- Filters ------------------------------------------------------------
     ui.label("Activity Journal").classes("text-h5 q-pb-sm")

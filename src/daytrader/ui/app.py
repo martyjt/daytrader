@@ -169,6 +169,8 @@ def create_app() -> None:
 
     # Importing page modules triggers their @ui.page() decorators.
     from .pages import (  # noqa: F401
+        admin_users,
+        auth,
         bandit_builder,
         cache,
         charts,

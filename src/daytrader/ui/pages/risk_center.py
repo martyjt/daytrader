@@ -14,7 +14,8 @@ from ..shell import page_layout, stat_card
 
 @ui.page("/risk")
 async def risk_center_page() -> None:
-    page_layout("Risk Center")
+    if not page_layout("Risk Center"):
+        return
 
     # ---- Kill switch banner ----------------------------------------------
     with ui.card().classes("w-full").style("background-color: #2d1111"):

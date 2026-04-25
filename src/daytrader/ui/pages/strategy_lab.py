@@ -17,7 +17,8 @@ from ..shell import page_layout
 
 @ui.page("/strategy-lab")
 async def strategy_lab_page(strategy: str | None = None) -> None:
-    page_layout("Strategy Lab")
+    if not page_layout("Strategy Lab"):
+        return
 
     # ---- shared state -------------------------------------------------------
     _state: dict = {
@@ -36,12 +37,14 @@ async def strategy_lab_page(strategy: str | None = None) -> None:
 
             from sqlalchemy import select
 
+            from ...auth.session import current_tenant_id
             from ...core.context import tenant_scope
-            from ...core.settings import get_settings
             from ...storage.database import get_session
             from ...storage.models import StrategyConfigModel
 
-            tid = get_settings().default_tenant_id
+            tid = current_tenant_id()
+            if tid is None:
+                return
             async with get_session() as session:
                 with tenant_scope(tid):
                     row = (await session.execute(

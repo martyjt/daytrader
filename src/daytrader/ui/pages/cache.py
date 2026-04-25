@@ -19,7 +19,8 @@ _CACHE_DIR = Path(__file__).resolve().parents[4] / "data" / "features"
 
 @ui.page("/cache")
 async def cache_page() -> None:
-    page_layout("Data Cache")
+    if not page_layout("Data Cache"):
+        return
 
     ui.label("Data Cache").classes("text-h5 q-pb-xs")
     ui.label(

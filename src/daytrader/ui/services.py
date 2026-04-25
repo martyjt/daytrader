@@ -10,15 +10,24 @@ from decimal import Decimal
 from typing import Any, Sequence
 from uuid import UUID
 
+from ..auth.session import current_tenant_id
 from ..core.context import tenant_scope
-from ..core.settings import get_settings
 from ..storage.database import get_session
 from ..storage.models import PersonaModel
 from ..storage.repository import TenantRepository
 
 
 def _tenant_id() -> UUID:
-    return get_settings().default_tenant_id
+    """Resolve the active tenant from the session.
+
+    Fails closed: pages that forget to early-return on an unauthenticated
+    ``page_layout`` won't accidentally read another tenant's data — they
+    get a RuntimeError instead.
+    """
+    tid = current_tenant_id()
+    if tid is None:
+        raise RuntimeError("No authenticated session — cannot resolve tenant_id")
+    return tid
 
 
 async def list_personas() -> list[Any]:

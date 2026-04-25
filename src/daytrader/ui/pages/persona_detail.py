@@ -18,7 +18,8 @@ from ..shell import page_layout
 
 @ui.page("/persona/{persona_id}")
 async def persona_detail_page(persona_id: str) -> None:
-    page_layout("Persona Detail")
+    if not page_layout("Persona Detail"):
+        return
 
     try:
         pid = UUID(persona_id)

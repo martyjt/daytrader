@@ -36,7 +36,8 @@ _FALLBACK_COLORS = [
 
 @ui.page("/charts")
 async def charts_page() -> None:
-    page_layout("Charts Workbench")
+    if not page_layout("Charts Workbench"):
+        return
 
     from ...algorithms.registry import AlgorithmRegistry
 

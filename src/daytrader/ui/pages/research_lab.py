@@ -27,7 +27,8 @@ RANK_OPTIONS = {
 
 @ui.page("/research-lab")
 async def research_lab_page() -> None:
-    page_layout("Research Lab")
+    if not page_layout("Research Lab"):
+        return
 
     from ...algorithms.registry import AlgorithmRegistry
     from ...backtest.fees import VENUE_PROFILES
