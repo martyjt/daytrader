@@ -139,3 +139,103 @@ async def test_activate_with_journal(session, _patch_session):
     await ks.activate(TENANT_ID, reason="drawdown")
 
     mock_journal.log_kill_switch.assert_called_once_with(TENANT_ID, "drawdown")
+
+
+# ---------------------------------------------------------------------------
+# Plugin worker shutdown (Phase 8)
+# ---------------------------------------------------------------------------
+
+
+class _FakePluginManager:
+    """Stand-in for PluginWorkerManager — records shutdown_tenant calls."""
+
+    def __init__(self, tenants_with_workers: set[UUID] | None = None) -> None:
+        self._tenants = set(tenants_with_workers or set())
+        self.shutdown_calls: list[UUID] = []
+
+    def has_handle(self, tenant_id: UUID) -> bool:
+        return tenant_id in self._tenants
+
+    async def shutdown_tenant(self, tenant_id: UUID) -> None:
+        self.shutdown_calls.append(tenant_id)
+        self._tenants.discard(tenant_id)
+
+
+async def test_activate_kills_plugin_worker_when_one_runs(session, _patch_session):
+    """activate() should also tear down the tenant's plugin worker."""
+    pm = _FakePluginManager(tenants_with_workers={TENANT_ID})
+    ks = KillSwitch(plugin_manager=pm)
+
+    await ks.activate(TENANT_ID, reason="manual")
+
+    assert pm.shutdown_calls == [TENANT_ID]
+
+
+async def test_activate_skips_plugin_shutdown_when_no_worker(session, _patch_session):
+    """No worker for that tenant → don't call shutdown_tenant."""
+    pm = _FakePluginManager(tenants_with_workers=set())
+    ks = KillSwitch(plugin_manager=pm)
+
+    await ks.activate(TENANT_ID, reason="manual")
+
+    assert pm.shutdown_calls == []
+
+
+async def test_activate_works_without_plugin_manager(session, _patch_session):
+    """Backwards-compat: KillSwitch with no plugin manager still pauses personas."""
+    await _add_persona(session, "Live Bot", "live")
+    ks = KillSwitch()  # no plugin_manager
+
+    count = await ks.activate(TENANT_ID, reason="manual")
+
+    assert count == 1
+
+
+async def test_activate_continues_when_plugin_shutdown_raises(
+    session, _patch_session
+):
+    """A plugin worker crash during shutdown must not abort the kill."""
+    await _add_persona(session, "Live Bot", "live")
+
+    class Boom(_FakePluginManager):
+        async def shutdown_tenant(self, tenant_id):  # type: ignore[override]
+            raise RuntimeError("worker stuck")
+
+    pm = Boom(tenants_with_workers={TENANT_ID})
+    ks = KillSwitch(plugin_manager=pm)
+
+    count = await ks.activate(TENANT_ID, reason="manual")
+
+    assert count == 1  # personas still paused
+    assert ks.is_activated is True
+
+
+async def test_kill_plugins_targets_only_workers(session, _patch_session):
+    """kill_plugins() tears down the worker but leaves personas alone."""
+    await _add_persona(session, "Live Bot", "live")
+    pm = _FakePluginManager(tenants_with_workers={TENANT_ID})
+    ks = KillSwitch(plugin_manager=pm)
+
+    killed = await ks.kill_plugins(TENANT_ID, reason="admin")
+
+    assert killed is True
+    assert pm.shutdown_calls == [TENANT_ID]
+
+    # Persona stays in live mode — kill_plugins must not pause trading.
+    with tenant_scope(TENANT_ID):
+        repo = TenantRepository(session, PersonaModel)
+        personas = await repo.get_all()
+        assert all(p.mode == "live" for p in personas)
+
+    # Doesn't flip the global activation flag either.
+    assert ks.is_activated is False
+
+
+async def test_kill_plugins_returns_false_when_no_worker(session, _patch_session):
+    pm = _FakePluginManager(tenants_with_workers=set())
+    ks = KillSwitch(plugin_manager=pm)
+
+    killed = await ks.kill_plugins(TENANT_ID, reason="admin")
+
+    assert killed is False
+    assert pm.shutdown_calls == []

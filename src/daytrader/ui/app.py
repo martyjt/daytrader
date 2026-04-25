@@ -74,7 +74,7 @@ async def _startup() -> None:
     from ..risk.global_risk import GlobalRiskConfig, GlobalRiskMonitor
 
     journal = JournalWriter()
-    kill_switch = init_kill_switch(journal=journal)
+    kill_switch = init_kill_switch(journal=journal, plugin_manager=plugin_manager)
     global_risk = GlobalRiskMonitor(GlobalRiskConfig.from_yaml())
 
     # Per-tenant supervisors — one TradingLoop / ExplorationScheduler /

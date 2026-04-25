@@ -251,6 +251,86 @@ async def test_kill_switch_activate_records_audit(seeded, monkeypatch):
     assert row.tenant_id == TENANT_A
     assert row.extra["reason"] == "test"
     assert row.extra["personas_paused"] == 1
+    # Phase 8: plugins_killed reported even when no worker was running.
+    assert row.extra["plugins_killed"] is False
+
+
+async def test_kill_switch_activate_records_plugin_kill(seeded, monkeypatch):
+    """activate() with a plugin_manager records plugins_killed=True."""
+    _patch_get_session(
+        monkeypatch,
+        seeded,
+        "daytrader.core.audit",
+        "daytrader.execution.kill_switch",
+    )
+    monkeypatch.setattr(audit, "current_tenant_id", lambda: None)
+    monkeypatch.setattr(audit, "current_user_id", lambda: None)
+
+    class _Manager:
+        def __init__(self):
+            self._tenants = {TENANT_A}
+            self.calls: list = []
+
+        def has_handle(self, t):
+            return t in self._tenants
+
+        async def shutdown_tenant(self, t):
+            self.calls.append(t)
+            self._tenants.discard(t)
+
+    pm = _Manager()
+    ks = KillSwitch(plugin_manager=pm)
+    await ks.activate(TENANT_A, reason="manual")
+
+    assert pm.calls == [TENANT_A]
+
+    async with seeded() as s:
+        row = (
+            await s.execute(
+                select(AuditLogModel).where(
+                    AuditLogModel.action == "kill_switch.activate"
+                )
+            )
+        ).scalar_one()
+    assert row.extra["plugins_killed"] is True
+
+
+async def test_kill_plugins_records_audit(seeded, monkeypatch):
+    """kill_plugins() writes a kill_switch.plugins audit row."""
+    _patch_get_session(
+        monkeypatch,
+        seeded,
+        "daytrader.core.audit",
+        "daytrader.execution.kill_switch",
+    )
+    monkeypatch.setattr(audit, "current_tenant_id", lambda: None)
+    monkeypatch.setattr(audit, "current_user_id", lambda: None)
+
+    class _Manager:
+        def __init__(self):
+            self._tenants = {TENANT_A}
+
+        def has_handle(self, t):
+            return t in self._tenants
+
+        async def shutdown_tenant(self, t):
+            self._tenants.discard(t)
+
+    ks = KillSwitch(plugin_manager=_Manager())
+    killed = await ks.kill_plugins(TENANT_A, reason="admin")
+    assert killed is True
+
+    async with seeded() as s:
+        row = (
+            await s.execute(
+                select(AuditLogModel).where(
+                    AuditLogModel.action == "kill_switch.plugins"
+                )
+            )
+        ).scalar_one()
+    assert row.tenant_id == TENANT_A
+    assert row.extra["reason"] == "admin"
+    assert row.extra["had_worker"] is True
 
 
 async def test_login_success_records_audit(seeded, monkeypatch):

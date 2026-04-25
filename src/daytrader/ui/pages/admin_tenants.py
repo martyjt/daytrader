@@ -28,35 +28,41 @@ async def admin_tenants_page() -> None:
     async def refresh() -> None:
         rows = await _load_tenants()
         worker_counts = _supervisor_worker_counts()
+        plugin_tenants = _plugin_worker_tenants()
         container.clear()
         with container:
             with ui.row().classes(
                 "w-full text-caption text-grey-6 q-px-sm q-py-xs"
             ):
-                ui.label("Name").classes("col-3")
+                ui.label("Name").classes("col-2")
                 ui.label("Users").classes("col-1")
                 ui.label("Active personas").classes("col-2")
                 ui.label("Workers").classes("col-2")
                 ui.label("Status").classes("col-2")
-                ui.label("").classes("col-2")
+                ui.label("").classes("col-3")
             ui.separator()
             for row in rows:
                 with ui.row().classes("w-full items-center q-px-sm q-py-xs"):
-                    ui.label(row["name"]).classes("col-3")
+                    ui.label(row["name"]).classes("col-2")
                     ui.label(str(row["user_count"])).classes("col-1")
                     ui.label(str(row["active_personas"])).classes("col-2")
                     running = sum(
                         1 for c in worker_counts.values() if row["id"] in c
                     )
-                    ui.label(f"{running} running").classes("col-2 text-caption")
+                    plugin_running = row["id"] in plugin_tenants
+                    workers_label = f"{running} running"
+                    if plugin_running:
+                        workers_label += " · plugin"
+                    ui.label(workers_label).classes("col-2 text-caption")
                     ui.label(
                         "enabled" if row["enabled"] else "paused"
                     ).classes(
                         "col-2 text-"
                         + ("positive" if row["enabled"] else "warning")
                     )
-                    with ui.row().classes("col-2 gap-1"):
+                    with ui.row().classes("col-3 gap-1"):
                         await _toggle_button(row, refresh)
+                        await _kill_plugins_button(row, refresh, plugin_running)
 
     await refresh()
 
@@ -107,6 +113,14 @@ def _supervisor_worker_counts() -> dict[str, set[UUID]]:
     return {s.name: set(s.workers.keys()) for s in manager._supervisors}  # noqa: SLF001
 
 
+def _plugin_worker_tenants() -> set[UUID]:
+    """Tenants with a live plugin worker subprocess."""
+    manager = getattr(app.state, "plugin_manager", None)
+    if manager is None:
+        return set()
+    return set(manager._handles.keys())
+
+
 async def _toggle_button(row: dict, refresh) -> None:
     label = "Pause workers" if row["enabled"] else "Resume workers"
 
@@ -136,3 +150,25 @@ async def _toggle_button(row: dict, refresh) -> None:
     ui.button(label, on_click=_toggle).props(
         "flat dense color=" + ("warning" if row["enabled"] else "positive")
     )
+
+
+async def _kill_plugins_button(row: dict, refresh, plugin_running: bool) -> None:
+    """Per-tenant Kill plugins button. Disabled when no worker is running."""
+    from ...execution.kill_switch import get_kill_switch
+
+    async def _kill() -> None:
+        try:
+            ks = get_kill_switch()
+        except RuntimeError:
+            ui.notify("Kill switch not ready — try again in a moment", type="negative")
+            return
+        killed = await ks.kill_plugins(row["id"], reason="admin")
+        ui.notify(
+            f"{row['name']}: {'plugin worker stopped' if killed else 'no plugin worker was running'}",
+            type="warning" if killed else "info",
+        )
+        await refresh()
+
+    btn = ui.button("Kill plugins", on_click=_kill).props("flat dense color=negative")
+    if not plugin_running:
+        btn.disable()
