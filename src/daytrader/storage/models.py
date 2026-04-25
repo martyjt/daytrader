@@ -324,6 +324,12 @@ class StrategyConfigModel(TenantMixin, Base):
     venue: Mapped[str] = mapped_column(String(50), default="binance_spot")
     algo_params: Mapped[dict] = mapped_column(JSON, default=dict)
     tags: Mapped[list] = mapped_column(JSON, default=list)
+    # Set when this config was created by promoting a Discovery row.
+    # Tells the trading loop to hydrate the discovered feature into
+    # ``ctx.features`` each bar before invoking the algorithm.
+    source_discovery_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("discoveries.id"), nullable=True, default=None, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

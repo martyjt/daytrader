@@ -274,13 +274,16 @@ async def test_resolve_persona_config_with_strategy_binding(session, _patch_sess
         await session.commit()
 
     loop = TradingLoop(tenant_id=TENANT_ID)
-    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+    algo_id, symbol, timeframe, params, venue, source_disc_id = (
+        await loop._resolve_persona_config(persona)
+    )
 
     assert algo_id == "rsi_mean_reversion"
     assert symbol == "BTC-USD"
     assert timeframe == "1h"
     assert params == {"rsi_period": 21, "oversold": 25}
     assert venue == "binance_spot"
+    assert source_disc_id is None
 
 
 async def test_resolve_persona_config_strategy_edits_propagate(session, _patch_session):
@@ -315,7 +318,7 @@ async def test_resolve_persona_config_strategy_edits_propagate(session, _patch_s
         await session.commit()
 
     loop = TradingLoop(tenant_id=TENANT_ID)
-    _, _, _, params, _ = await loop._resolve_persona_config(persona)
+    _, _, _, params, _, _ = await loop._resolve_persona_config(persona)
 
     assert params == {"fast": 5, "slow": 50}
 
@@ -346,13 +349,16 @@ async def test_resolve_persona_config_strategy_deleted_falls_back(session, _patc
         await session.commit()
 
     loop = TradingLoop(tenant_id=TENANT_ID)
-    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+    algo_id, symbol, timeframe, params, venue, source_disc_id = (
+        await loop._resolve_persona_config(persona)
+    )
 
     assert algo_id == "buy_hold"
     assert symbol == "BTC-USD"
     assert timeframe == "1d"
     assert params == {"fallback": True}
     assert venue == "fallback_venue"
+    assert source_disc_id is None
 
 
 async def test_resolve_persona_config_back_compat_algorithm_id(session, _patch_session):
@@ -377,13 +383,16 @@ async def test_resolve_persona_config_back_compat_algorithm_id(session, _patch_s
         await session.commit()
 
     loop = TradingLoop(tenant_id=TENANT_ID)
-    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+    algo_id, symbol, timeframe, params, venue, source_disc_id = (
+        await loop._resolve_persona_config(persona)
+    )
 
     assert algo_id == "buy_hold"
     assert symbol == "BTC-USD"
     assert timeframe == "4h"
     assert params == {}
     assert venue is None
+    assert source_disc_id is None
 
 
 async def test_resolve_persona_config_no_config(session, _patch_session):
@@ -404,13 +413,16 @@ async def test_resolve_persona_config_no_config(session, _patch_session):
         await session.commit()
 
     loop = TradingLoop(tenant_id=TENANT_ID)
-    algo_id, symbol, timeframe, params, venue = await loop._resolve_persona_config(persona)
+    algo_id, symbol, timeframe, params, venue, source_disc_id = (
+        await loop._resolve_persona_config(persona)
+    )
 
     assert algo_id is None
     assert symbol is None
     assert timeframe == "1d"
     assert params == {}
     assert venue is None
+    assert source_disc_id is None
 
 
 async def test_resolve_persona_config_invalid_strategy_id(session, _patch_session):
@@ -435,7 +447,7 @@ async def test_resolve_persona_config_invalid_strategy_id(session, _patch_sessio
         await session.commit()
 
     loop = TradingLoop(tenant_id=TENANT_ID)
-    algo_id, symbol, _, _, _ = await loop._resolve_persona_config(persona)
+    algo_id, symbol, _, _, _, _ = await loop._resolve_persona_config(persona)
 
     assert algo_id == "buy_hold"
     assert symbol == "BTC-USD"

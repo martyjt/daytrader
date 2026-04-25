@@ -34,7 +34,12 @@ from ..core.types.signals import Signal
 from ..core.types.symbols import Symbol
 from ..data.adapters.registry import AdapterRegistry
 from ..storage.database import get_session
-from ..storage.models import PersonaModel, SignalModel, StrategyConfigModel
+from ..storage.models import (
+    DiscoveryModel,
+    PersonaModel,
+    SignalModel,
+    StrategyConfigModel,
+)
 from ..storage.repository import TenantRepository
 
 from .registry import ExecutionRegistry
@@ -131,9 +136,14 @@ class TradingLoop:
 
     async def _process_persona(self, persona: Any) -> None:
         """Fetch bar → run algo → risk check → submit order → journal."""
-        algo_id, symbol_str, timeframe_str, algo_params, venue = (
-            await self._resolve_persona_config(persona)
-        )
+        (
+            algo_id,
+            symbol_str,
+            timeframe_str,
+            algo_params,
+            venue,
+            source_discovery_id,
+        ) = await self._resolve_persona_config(persona)
 
         if not algo_id or not symbol_str:
             return  # Persona not configured for live trading
@@ -196,6 +206,18 @@ class TradingLoop:
         emitted: list[Signal] = []
         debug_logs: list[dict] = []
 
+        # Hydrate any discovered feature attached to this strategy
+        # config. ``features`` stays empty for plain strategies that
+        # never bound a discovery — the existing algorithms don't
+        # read from it, so this is a pure additive change.
+        features: dict[str, float] = {}
+        if source_discovery_id is not None:
+            features = await self._hydrate_discovered_features(
+                tenant_id=persona.tenant_id,
+                discovery_id=source_discovery_id,
+                now=timestamps[i],
+            )
+
         ctx = AlgorithmContext(
             tenant_id=persona.tenant_id,
             persona_id=persona.id,
@@ -211,7 +233,7 @@ class TradingLoop:
                 "low": lows,
                 "volume": volumes,
             },
-            features={},
+            features=features,
             params=algo_params,
             emit_fn=emitted.append,
             log_fn=lambda msg, fields: debug_logs.append(
@@ -323,22 +345,26 @@ class TradingLoop:
 
     async def _resolve_persona_config(
         self, persona: Any
-    ) -> tuple[str | None, str | None, str, dict, str | None]:
+    ) -> tuple[str | None, str | None, str, dict, str | None, UUID | None]:
         """Resolve trading config for a persona — read-through to StrategyConfig.
 
         Resolution order:
         1. If ``meta.strategy_config_id`` is set, load StrategyConfigModel by
-           id and return its (algo_id, symbol, timeframe, algo_params, venue).
-           This makes edits to the saved strategy propagate live.
+           id and return its (algo_id, symbol, timeframe, algo_params,
+           venue, source_discovery_id). This makes edits to the saved
+           strategy propagate live.
         2. If the strategy was deleted or the id is malformed, log and fall
            through to (3).
         3. Use embedded ``persona.meta`` keys: ``algo_id`` (with
            ``algorithm_id`` accepted as a back-compat alias), ``symbol``,
            ``timeframe`` (default ``"1d"``), ``params``, ``venue``.
+           ``source_discovery_id`` is always ``None`` for the embedded
+           path — discovery binding only flows through StrategyConfig.
 
-        Returns a 5-tuple. ``algo_id`` and ``symbol`` may be ``None`` (caller
-        treats that as "not configured for live"); ``timeframe`` always falls
-        back to ``"1d"`` and ``params`` always falls back to ``{}``.
+        Returns a 6-tuple. ``algo_id`` and ``symbol`` may be ``None``
+        (caller treats that as "not configured for live"); ``timeframe``
+        always falls back to ``"1d"`` and ``params`` always falls back
+        to ``{}``.
         """
         meta = persona.meta or {}
         strategy_id_raw = meta.get("strategy_config_id")
@@ -369,6 +395,7 @@ class TradingLoop:
                         strategy.timeframe,
                         dict(strategy.algo_params or {}),
                         strategy.venue,
+                        strategy.source_discovery_id,
                     )
                 logger.warning(
                     "strategy_config_id %s on persona %s no longer exists; "
@@ -383,7 +410,48 @@ class TradingLoop:
             meta.get("timeframe", "1d"),
             dict(meta.get("params") or {}),
             meta.get("venue"),
+            None,
         )
+
+    async def _hydrate_discovered_features(
+        self,
+        *,
+        tenant_id: UUID,
+        discovery_id: UUID,
+        now: datetime,
+    ) -> dict[str, float]:
+        """Resolve a promoted Discovery's feature value at ``now``.
+
+        Returns a dict ready to drop into ``AlgorithmContext.features``.
+        On any failure (discovery deleted, hydration upstream error,
+        empty response) returns ``{}`` so the algorithm sees a missing
+        feature and stays flat — never raises into the trading cycle.
+        """
+        try:
+            async with get_session() as session:
+                with tenant_scope(tenant_id):
+                    repo = TenantRepository(session, DiscoveryModel)
+                    discovery = await repo.get(discovery_id)
+        except Exception:
+            logger.exception(
+                "Failed to load discovery %s for tenant %s",
+                discovery_id, tenant_id,
+            )
+            return {}
+
+        if discovery is None:
+            logger.warning(
+                "StrategyConfig references discovery %s which no longer exists",
+                discovery_id,
+            )
+            return {}
+
+        from ..research.feature_hydration import get_feature_hydrator
+
+        value = await get_feature_hydrator().hydrate(discovery, now=now)
+        if value is None:
+            return {}
+        return {discovery.candidate_name: float(value)}
 
     async def _get_active_personas(self) -> list[Any]:
         """Query all personas in live or paper mode."""

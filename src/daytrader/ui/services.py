@@ -714,7 +714,13 @@ async def run_correlation_scan_service(
 
 
 async def update_discovery_status(discovery_id: UUID, status: str) -> bool:
-    """Update a discovery's status (new/promoted/dismissed)."""
+    """Update a discovery's status (new/promoted/dismissed).
+
+    Note: promotion should go through :func:`promote_discovery`, which
+    creates the matching StrategyConfig artifact. Calling this with
+    ``status="promoted"`` only flips the column and is therefore
+    deprecated — kept for the dismiss path.
+    """
     from sqlalchemy import update
 
     from ..storage.models import DiscoveryModel
@@ -731,3 +737,15 @@ async def update_discovery_status(discovery_id: UUID, status: str) -> bool:
             )
             await session.commit()
             return result.rowcount > 0
+
+
+async def promote_discovery(discovery_id: UUID) -> Any:
+    """Promote a Discovery → new StrategyConfigModel + status flip.
+
+    Returns a :class:`PromotionResult` describing the new artifact.
+    Raises :class:`PromotionError` for unknown / cross-tenant /
+    already-promoted rows.
+    """
+    from ..research.promotion import promote_discovery as _promote
+
+    return await _promote(tenant_id=_tenant_id(), discovery_id=discovery_id)

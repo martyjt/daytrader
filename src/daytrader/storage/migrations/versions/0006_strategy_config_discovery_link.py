@@ -1,0 +1,48 @@
+"""Phase 5 — link StrategyConfig back to its source Discovery.
+
+Adds ``strategy_configs.source_discovery_id`` so the trading loop can
+hydrate a discovered feature (FRED series value, sentiment score,
+cross-asset price) into ``AlgorithmContext.features`` at bar time.
+
+Nullable: existing strategy configs predate Phase 5 and have no source
+discovery; only configs created by ``promote_discovery`` set the FK.
+
+Revision ID: 0006_strategy_config_discovery_link
+Revises: 0005_tenant_workers_flag
+"""
+
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+
+revision: str = "0006_strategy_config_discovery_link"
+down_revision: Union[str, None] = "0005_tenant_workers_flag"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "strategy_configs",
+        sa.Column(
+            "source_discovery_id",
+            sa.Uuid(),
+            sa.ForeignKey("discoveries.id"),
+            nullable=True,
+        ),
+    )
+    op.create_index(
+        "ix_strategy_configs_source_discovery_id",
+        "strategy_configs",
+        ["source_discovery_id"],
+    )
+
+
+def downgrade() -> None:
+    op.drop_index(
+        "ix_strategy_configs_source_discovery_id",
+        table_name="strategy_configs",
+    )
+    op.drop_column("strategy_configs", "source_discovery_id")

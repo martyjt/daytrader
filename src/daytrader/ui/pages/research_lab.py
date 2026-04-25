@@ -1789,29 +1789,45 @@ async def _refresh_discoveries_list(container, *, target_symbol: str | None = No
 
 
 def _render_discovery_action_row(discovery, outer_container) -> None:
-    """Promote/dismiss buttons for one significant discovery."""
+    """Promote/dismiss buttons for one significant discovery.
+
+    "Promote" creates a real ``StrategyConfigModel`` artifact (Phase 5
+    contract) rather than just flipping the status. "Dismiss" is the
+    no-artifact path and still uses ``update_discovery_status``.
+    """
     status_text = ui.label(f"Status: {discovery.status}").classes(
         "text-caption text-grey-5"
     )
 
-    async def _set_status(new_status: str) -> None:
+    async def _promote() -> None:
+        from ..services import promote_discovery
+
+        try:
+            result = await promote_discovery(discovery.id)
+            status_text.text = "Status: promoted"
+            status_text.classes(replace="text-caption text-positive")
+            ui.notify(
+                f"Promoted {discovery.candidate_name} → "
+                f"strategy '{result.strategy_name}' "
+                f"(algo: {result.algo_id})",
+                type="positive",
+                multi_line=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            ui.notify(f"Promotion failed: {exc}", type="negative")
+
+    async def _dismiss() -> None:
         from ..services import update_discovery_status
 
         try:
-            await update_discovery_status(discovery.id, new_status)
-            status_text.text = f"Status: {new_status}"
-            color = (
-                "positive" if new_status == "promoted"
-                else "negative" if new_status == "dismissed"
-                else "grey-5"
-            )
-            status_text.classes(replace=f"text-caption text-{color}")
+            await update_discovery_status(discovery.id, "dismissed")
+            status_text.text = "Status: dismissed"
+            status_text.classes(replace="text-caption text-negative")
             ui.notify(
-                f"{discovery.candidate_name} → {new_status}",
-                type="positive" if new_status == "promoted" else "warning",
+                f"Dismissed {discovery.candidate_name}", type="warning",
             )
         except Exception as exc:  # noqa: BLE001
-            ui.notify(f"Action failed: {exc}", type="negative")
+            ui.notify(f"Dismiss failed: {exc}", type="negative")
 
     with ui.card().classes("w-full q-pa-sm q-mb-xs"):
         with ui.row().classes("w-full items-center gap-3 no-wrap"):
@@ -1825,9 +1841,12 @@ def _render_discovery_action_row(discovery, outer_container) -> None:
             status_text
             ui.button(
                 "Promote", icon="north",
-                on_click=lambda _e=None: _set_status("promoted"),
-            ).props("color=positive dense flat")
+                on_click=lambda _e=None: _promote(),
+            ).props("color=positive dense flat").tooltip(
+                "Create a feature_threshold strategy config bound to "
+                "this discovery. Tune thresholds + attach to a persona."
+            )
             ui.button(
                 "Dismiss", icon="south",
-                on_click=lambda _e=None: _set_status("dismissed"),
+                on_click=lambda _e=None: _dismiss(),
             ).props("color=negative dense flat")

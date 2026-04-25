@@ -37,9 +37,13 @@ class AlgorithmRegistry:
     def auto_register(cls) -> None:
         """Register all built-in algorithms."""
         from .builtin.buy_hold import BuyHoldAlgorithm
+        from .builtin.feature_threshold import FeatureThresholdAlgorithm
 
         if "buy_hold" not in cls._algorithms:
             cls.register(BuyHoldAlgorithm())
+
+        if "feature_threshold" not in cls._algorithms:
+            cls.register(FeatureThresholdAlgorithm())
 
         if "xgboost_trend" not in cls._algorithms:
             try:
