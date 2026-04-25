@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from daytrader.algorithms.registry import AlgorithmRegistry
 from daytrader.algorithms.sandbox import (
@@ -23,7 +23,6 @@ from daytrader.algorithms.sandbox.installer import (
     set_plugin_enabled,
     uninstall_plugin,
 )
-from daytrader.storage.database import Base
 from daytrader.storage.models import TenantModel, UserModel
 
 
@@ -58,15 +57,6 @@ class Bad(Algorithm):
     def on_bar(self, ctx):
         return None
 """
-
-
-@pytest_asyncio.fixture
-async def engine():
-    e = create_async_engine("sqlite+aiosqlite://", echo=False)
-    async with e.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield e
-    await e.dispose()
 
 
 @pytest_asyncio.fixture

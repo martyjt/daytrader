@@ -16,7 +16,7 @@ from uuid import UUID
 import polars as pl
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from daytrader.algorithms.registry import AlgorithmRegistry
 from daytrader.algorithms.sandbox import (
@@ -27,7 +27,6 @@ from daytrader.algorithms.sandbox.installer import install_plugin
 from daytrader.backtest.engine import BacktestEngine
 from daytrader.core.types.bars import Timeframe
 from daytrader.core.types.symbols import AssetClass, Symbol
-from daytrader.storage.database import Base
 from daytrader.storage.models import TenantModel, UserModel
 
 
@@ -59,17 +58,8 @@ class MeanCross(Algorithm):
 
 
 @pytest_asyncio.fixture
-async def db_engine():
-    e = create_async_engine("sqlite+aiosqlite://", echo=False)
-    async with e.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield e
-    await e.dispose()
-
-
-@pytest_asyncio.fixture
-async def db(db_engine, monkeypatch):
-    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+async def db(engine, monkeypatch):
+    factory = async_sessionmaker(engine, expire_on_commit=False)
 
     @asynccontextmanager
     async def _get_session():

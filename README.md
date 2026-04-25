@@ -60,6 +60,43 @@ python -m daytrader
 > **Windows note:** use `python`, not `python3`. `python3` on Windows
 > resolves to the Store stub and fails.
 
+## Local Postgres for development
+
+Production runs on Postgres; SQLite is the default for tests and local dev
+because it has no setup cost. Spin up a local Postgres when you want to
+exercise the same dialect prod uses (or repro a Postgres-only bug).
+
+```bash
+# Start a throwaway Postgres on :5433 so it doesn't clash with anything
+# else you're running.
+docker run --rm -d --name daytrader-pg \
+  -e POSTGRES_USER=daytrader \
+  -e POSTGRES_PASSWORD=daytrader \
+  -e POSTGRES_DB=daytrader \
+  -p 5433:5432 postgres:16-alpine
+
+# Run the schema migrations into it.
+DATABASE_URL=postgresql+asyncpg://daytrader:daytrader@localhost:5433/daytrader \
+  alembic upgrade head
+
+# Re-run the test suite against Postgres (matches the CI matrix).
+TEST_DATABASE_URL=postgresql+asyncpg://daytrader:daytrader@localhost:5433/daytrader \
+  pytest -q
+
+# Practice the backup/restore drill on it.
+./scripts/backup_restore_drill.sh \
+  postgresql://daytrader:daytrader@localhost:5433/daytrader \
+  postgresql://daytrader:daytrader@localhost:5433/daytrader_restore
+
+# Tear it down when you're done.
+docker rm -f daytrader-pg
+```
+
+The CI build runs `pytest` twice (SQLite + Postgres), then `alembic
+upgrade head`, then the backup/restore drill against the same service
+container. Anything dialect-specific that slips into a model column or
+migration shows up there before it reaches the prod deploy.
+
 ## Architecture
 
 Layered, plugin-first, multi-tenant from day one:

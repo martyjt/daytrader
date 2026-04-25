@@ -12,13 +12,12 @@ import numpy as np
 import polars as pl
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from daytrader.core.context import tenant_scope
 from daytrader.execution.loop import TradingLoop, _timeframe_to_days
 from daytrader.execution.paper import PaperExecutor
 from daytrader.execution.registry import ExecutionRegistry
-from daytrader.storage.database import Base
 from daytrader.storage.models import PersonaModel, StrategyConfigModel, TenantModel
 from daytrader.storage.repository import TenantRepository
 from daytrader.core.types.bars import Timeframe
@@ -55,15 +54,6 @@ def _rising_ohlcv(n: int = 50) -> pl.DataFrame:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def engine():
-    e = create_async_engine("sqlite+aiosqlite://", echo=False)
-    async with e.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield e
-    await e.dispose()
 
 
 @pytest_asyncio.fixture

@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import polars as pl
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import daytrader.storage.database as database
 from daytrader.algorithms.builtin.feature_threshold import (
@@ -26,7 +26,6 @@ from daytrader.research.promotion import (
     PromotionError,
     promote_discovery,
 )
-from daytrader.storage.database import Base
 from daytrader.storage.models import (
     DiscoveryModel,
     StrategyConfigModel,
@@ -37,15 +36,6 @@ from daytrader.storage.models import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def engine():
-    e = create_async_engine("sqlite+aiosqlite://", echo=False)
-    async with e.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield e
-    await e.dispose()
 
 
 @pytest_asyncio.fixture

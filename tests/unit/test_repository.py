@@ -11,21 +11,11 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from daytrader.core.context import current_tenant, tenant_scope
-from daytrader.storage.database import Base
 from daytrader.storage.models import PersonaModel, TenantModel
 from daytrader.storage.repository import TenantRepository
-
-
-@pytest_asyncio.fixture
-async def engine():
-    e = create_async_engine("sqlite+aiosqlite://", echo=False)
-    async with e.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield e
-    await e.dispose()
 
 
 @pytest_asyncio.fixture

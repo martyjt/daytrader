@@ -9,26 +9,16 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from daytrader.core.context import tenant_scope
 from daytrader.core.events.base import EventType
 from daytrader.core.types.orders import Order, OrderSide, OrderStatus, OrderType
-from daytrader.storage.database import Base
 from daytrader.storage.models import JournalEntryModel, PersonaModel, TenantModel
 
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 PERSONA_ID = UUID("00000000-0000-0000-0000-000000000002")
-
-
-@pytest_asyncio.fixture
-async def engine():
-    e = create_async_engine("sqlite+aiosqlite://", echo=False)
-    async with e.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield e
-    await e.dispose()
 
 
 @pytest_asyncio.fixture
