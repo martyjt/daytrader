@@ -7,8 +7,11 @@ cross-asset price) into ``AlgorithmContext.features`` at bar time.
 Nullable: existing strategy configs predate Phase 5 and have no source
 discovery; only configs created by ``promote_discovery`` set the FK.
 
-Revision ID: 0006_strategy_config_discovery_link
+Revision ID: 0006_strategy_discovery_link
 Revises: 0005_tenant_workers_flag
+
+(Revision string shortened to fit alembic_version's VARCHAR(32) on Postgres;
+the filename retains the original descriptive name for grep-ability.)
 """
 
 from typing import Sequence, Union
@@ -17,7 +20,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0006_strategy_config_discovery_link"
+revision: str = "0006_strategy_discovery_link"
 down_revision: Union[str, None] = "0005_tenant_workers_flag"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

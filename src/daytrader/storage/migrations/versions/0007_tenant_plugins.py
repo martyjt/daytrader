@@ -11,7 +11,7 @@ per algorithm id per tenant — re-uploads replace the existing row in the
 installer rather than creating duplicates.
 
 Revision ID: 0007_tenant_plugins
-Revises: 0006_strategy_config_discovery_link
+Revises: 0006_strategy_discovery_link
 """
 
 from typing import Sequence, Union
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 
 
 revision: str = "0007_tenant_plugins"
-down_revision: Union[str, None] = "0006_strategy_config_discovery_link"
+down_revision: Union[str, None] = "0006_strategy_discovery_link"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
