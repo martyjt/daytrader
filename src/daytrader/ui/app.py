@@ -51,41 +51,33 @@ async def _startup() -> None:
     from ..journal.writer import JournalWriter
     from ..execution.kill_switch import init_kill_switch
     from ..risk.global_risk import GlobalRiskConfig, GlobalRiskMonitor
-    from ..execution.loop import TradingLoop
 
     journal = JournalWriter()
     kill_switch = init_kill_switch(journal=journal)
-
     global_risk = GlobalRiskMonitor(GlobalRiskConfig.from_yaml())
 
-    # Start the live trading loop.
-    _loop = TradingLoop(
-        journal=journal,
-        kill_switch=kill_switch,
-        global_risk=global_risk,
-        tenant_id=settings.default_tenant_id,
-    )
-    await _loop.start()
-    app.state.trading_loop = _loop
+    # Per-tenant supervisors — one TradingLoop / ExplorationScheduler /
+    # ShadowScheduler per active tenant. Each polls every 60s and spins
+    # workers up or down as personas / tenants change.
+    from ..core.supervisor import SupervisorManager
+    from ..execution.supervisor import TradingLoopSupervisor
+    from ..research.supervisor import ExplorationSupervisor, ShadowSupervisor
 
-    # Optional: start the Exploration Agent scheduler (off by default).
-    from ..research.scheduler import ExplorationScheduler
-
-    symbols = [
-        s.strip() for s in settings.exploration_schedule_symbols.split(",")
-        if s.strip()
-    ]
-    exploration = ExplorationScheduler(
-        tenant_id=settings.default_tenant_id,
-        interval_hours=settings.exploration_schedule_hours,
-        symbols=symbols,
-        timeframe=settings.exploration_schedule_timeframe,
-        lookback_days=settings.exploration_schedule_lookback_days,
-    )
-    await exploration.start()
-    app.state.exploration_scheduler = exploration
+    manager = SupervisorManager([
+        TradingLoopSupervisor(
+            journal=journal,
+            kill_switch=kill_switch,
+            global_risk=global_risk,
+        ),
+        ExplorationSupervisor(),
+        ShadowSupervisor(),
+    ])
+    await manager.start_all()
+    app.state.supervisor_manager = manager
 
     # Start the regime watcher (keeps Regime Badge fresh + fires alerts).
+    # Tenant-agnostic: the HMM is fit on a single pulse symbol shared by all
+    # tenants, so a per-tenant supervisor would just duplicate work.
     from .regime_watcher import RegimeWatcher
 
     watcher = RegimeWatcher(
@@ -96,35 +88,8 @@ async def _startup() -> None:
     await watcher.start()
     app.state.regime_watcher = watcher
 
-    # Optional: scheduled shadow tournaments (off by default — heavy).
-    from ..research.shadow_scheduler import ShadowScheduler
-
-    shadow_candidates = [
-        c.strip() for c in settings.shadow_schedule_candidates.split(",")
-        if c.strip()
-    ]
-    shadow = ShadowScheduler(
-        tenant_id=settings.default_tenant_id,
-        interval_hours=settings.shadow_schedule_hours,
-        primary_algo_id=settings.shadow_schedule_primary,
-        candidate_algo_ids=shadow_candidates,
-        symbol=settings.shadow_schedule_symbol,
-        timeframe=settings.shadow_schedule_timeframe,
-        lookback_days=settings.shadow_schedule_lookback_days,
-    )
-    await shadow.start()
-    app.state.shadow_scheduler = shadow
-
 
 async def _shutdown() -> None:
-    # Stop the shadow scheduler.
-    shadow = getattr(app.state, "shadow_scheduler", None)
-    if shadow:
-        try:
-            await shadow.stop()
-        except Exception:
-            pass
-
     # Stop the regime watcher.
     watcher = getattr(app.state, "regime_watcher", None)
     if watcher:
@@ -133,18 +98,13 @@ async def _shutdown() -> None:
         except Exception:
             pass
 
-    # Stop the exploration scheduler.
-    scheduler = getattr(app.state, "exploration_scheduler", None)
-    if scheduler:
+    # Stop all per-tenant supervisors (and their workers).
+    manager = getattr(app.state, "supervisor_manager", None)
+    if manager:
         try:
-            await scheduler.stop()
+            await manager.stop_all()
         except Exception:
             pass
-
-    # Stop the trading loop.
-    loop = getattr(app.state, "trading_loop", None)
-    if loop:
-        await loop.stop()
 
     # Close any live broker connections.
     from ..execution.registry import ExecutionRegistry
@@ -169,6 +129,7 @@ def create_app() -> None:
 
     # Importing page modules triggers their @ui.page() decorators.
     from .pages import (  # noqa: F401
+        admin_tenants,
         admin_users,
         auth,
         bandit_builder,
