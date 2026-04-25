@@ -8,6 +8,10 @@ import numpy as np
 import polars as pl
 import pytest
 
+# Torch is in the optional `dl` extra; CI's slim install doesn't carry it.
+# Skip the whole module if torch isn't importable rather than fail collection.
+pytest.importorskip("torch")
+
 from daytrader.algorithms.builtin.lstm_trend import LSTMTrendAlgorithm
 from daytrader.algorithms.builtin.torch_base import build_dl_feature_matrix, N_FEATURES
 from daytrader.algorithms.registry import AlgorithmRegistry
