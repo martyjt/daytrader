@@ -574,6 +574,72 @@ async def list_shadow_tournaments_service(limit: int = 50) -> list[Any]:
     return await list_tournaments(tenant_id=_tenant_id(), limit=limit)
 
 
+async def run_per_symbol_universe_tournament_service(
+    *,
+    primary_algo_id: str,
+    candidate_algo_ids: Sequence[str],
+    symbols: Sequence[str],
+    universe_name: str,
+    timeframe_str: str,
+    start_str: str,
+    end_str: str,
+    initial_capital: float = 10_000.0,
+    venue: str = "binance_spot",
+    n_folds: int = 5,
+) -> Any:
+    """Run one tournament per universe symbol; bundle the per-symbol reports."""
+    from datetime import datetime as dt
+
+    from ..research.shadow_trading import run_per_symbol_universe_tournament
+
+    return await run_per_symbol_universe_tournament(
+        tenant_id=_tenant_id(),
+        primary_algo_id=primary_algo_id,
+        candidate_algo_ids=list(candidate_algo_ids),
+        symbols=list(symbols),
+        universe_name=universe_name,
+        timeframe_str=timeframe_str,
+        start=dt.strptime(start_str, "%Y-%m-%d"),
+        end=dt.strptime(end_str, "%Y-%m-%d"),
+        initial_capital=initial_capital,
+        venue=venue,
+        n_folds=n_folds,
+    )
+
+
+async def run_basket_tournament_service(
+    *,
+    primary_algo_id: str,
+    candidate_algo_ids: Sequence[str],
+    symbols: Sequence[str],
+    universe_name: str,
+    timeframe_str: str,
+    start_str: str,
+    end_str: str,
+    initial_capital: float = 10_000.0,
+    venue: str = "binance_spot",
+    n_folds: int = 5,
+) -> Any:
+    """Run a single basket tournament: candidates scored by mean metrics across symbols."""
+    from datetime import datetime as dt
+
+    from ..research.shadow_trading import run_basket_tournament
+
+    return await run_basket_tournament(
+        tenant_id=_tenant_id(),
+        primary_algo_id=primary_algo_id,
+        candidate_algo_ids=list(candidate_algo_ids),
+        symbols=list(symbols),
+        universe_name=universe_name,
+        timeframe_str=timeframe_str,
+        start=dt.strptime(start_str, "%Y-%m-%d"),
+        end=dt.strptime(end_str, "%Y-%m-%d"),
+        initial_capital=initial_capital,
+        venue=venue,
+        n_folds=n_folds,
+    )
+
+
 async def update_shadow_status_service(
     tournament_id: UUID,
     candidate_algo_id: str,

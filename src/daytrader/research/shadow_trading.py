@@ -284,6 +284,231 @@ async def run_shadow_tournament(
     return report
 
 
+@dataclass
+class UniverseTournamentReport:
+    """Bundle of per-symbol tournaments plus the cross-symbol tally.
+
+    Per-symbol mode runs ``run_shadow_tournament`` once per universe symbol;
+    each per-symbol report keeps its own ``tournament_id`` and DB rows so
+    the existing promote/dismiss/history flows keep working unchanged.
+    The bundle adds a top-level "wins per algo" tally so users can spot
+    candidates that consistently beat the primary across the basket.
+    """
+
+    universe_name: str
+    symbols: list[str]
+    per_symbol_reports: list[ShadowTournamentReport] = field(default_factory=list)
+
+    def win_counts(self) -> dict[str, int]:
+        """Return ``{algo_id: number of symbols where it beat the primary}``."""
+        counts: dict[str, int] = {}
+        for r in self.per_symbol_reports:
+            for cand in r.candidates:
+                if cand.beat_primary:
+                    counts[cand.algo_id] = counts.get(cand.algo_id, 0) + 1
+        return counts
+
+    def algo_names(self) -> dict[str, str]:
+        names: dict[str, str] = {}
+        for r in self.per_symbol_reports:
+            for c in r.candidates:
+                names.setdefault(c.algo_id, c.algo_name)
+        return names
+
+
+async def run_per_symbol_universe_tournament(
+    *,
+    tenant_id: UUID,
+    primary_algo_id: str,
+    candidate_algo_ids: list[str],
+    symbols: list[str],
+    universe_name: str,
+    timeframe_str: str,
+    start: datetime,
+    end: datetime,
+    initial_capital: float = 10_000.0,
+    venue: str = "binance_spot",
+    n_folds: int = 5,
+) -> UniverseTournamentReport:
+    """Run one tournament per symbol in the universe and bundle the results.
+
+    Each symbol gets its own ``tournament_id`` row set in ``shadow_runs``,
+    so promote/dismiss decisions remain per-symbol — which matches how a
+    user would think about it ("ETH winner is X, BTC winner is Y").
+    """
+    bundle = UniverseTournamentReport(
+        universe_name=universe_name,
+        symbols=list(symbols),
+    )
+    for sym in symbols:
+        report = await run_shadow_tournament(
+            tenant_id=tenant_id,
+            primary_algo_id=primary_algo_id,
+            candidate_algo_ids=candidate_algo_ids,
+            symbol_str=sym,
+            timeframe_str=timeframe_str,
+            start=start,
+            end=end,
+            initial_capital=initial_capital,
+            venue=venue,
+            n_folds=n_folds,
+            persist=True,
+        )
+        bundle.per_symbol_reports.append(report)
+    return bundle
+
+
+async def run_basket_tournament(
+    *,
+    tenant_id: UUID,
+    primary_algo_id: str,
+    candidate_algo_ids: list[str],
+    symbols: list[str],
+    universe_name: str,
+    timeframe_str: str,
+    start: datetime,
+    end: datetime,
+    initial_capital: float = 10_000.0,
+    venue: str = "binance_spot",
+    n_folds: int = 5,
+) -> ShadowTournamentReport:
+    """Score each candidate by averaging metrics across the universe symbols.
+
+    Reuses ``run_shadow_tournament`` per symbol with ``persist=False``
+    (avoids polluting per-symbol history with basket-only runs), then
+    aggregates: Sharpe/return/DD become means across symbols, trades
+    sum, ``stability_score`` becomes the fraction of symbols where the
+    candidate's aggregate Sharpe beat the primary's. One synthetic
+    ``shadow_runs`` row per candidate is written with ``target_symbol``
+    = "basket" and the symbol list in ``meta``.
+    """
+    from ..core.context import tenant_scope
+    from ..storage.database import get_session
+    from ..storage.models import ShadowRunModel
+
+    tournament_id = uuid4()
+    per_symbol: list[ShadowTournamentReport] = []
+    for sym in symbols:
+        per_symbol.append(await run_shadow_tournament(
+            tenant_id=tenant_id,
+            primary_algo_id=primary_algo_id,
+            candidate_algo_ids=candidate_algo_ids,
+            symbol_str=sym,
+            timeframe_str=timeframe_str,
+            start=start,
+            end=end,
+            initial_capital=initial_capital,
+            venue=venue,
+            n_folds=n_folds,
+            persist=False,
+        ))
+
+    # Pivot: gather every algo's per-symbol candidate row.
+    by_algo: dict[str, list[ShadowCandidate]] = {}
+    algo_names: dict[str, str] = {}
+    primary_was_seen = False
+    for rep in per_symbol:
+        for c in rep.candidates:
+            by_algo.setdefault(c.algo_id, []).append(c)
+            algo_names.setdefault(c.algo_id, c.algo_name)
+            if c.is_primary:
+                primary_was_seen = True
+
+    aggregated: list[ShadowCandidate] = []
+    primary_per_symbol_sharpe: list[float] = [
+        next((c.sharpe for c in r.candidates if c.is_primary), 0.0)
+        for r in per_symbol
+    ]
+    for aid, rows in by_algo.items():
+        is_primary = aid == primary_algo_id
+        valid = [c for c in rows if c.error is None]
+        if not valid:
+            aggregated.append(ShadowCandidate(
+                algo_id=aid,
+                algo_name=algo_names[aid],
+                is_primary=is_primary,
+                error="No valid per-symbol runs",
+            ))
+            continue
+        mean_sharpe = float(np.mean([c.sharpe for c in valid]))
+        mean_return = float(np.mean([c.net_return_pct for c in valid]))
+        mean_dd = float(np.mean([c.max_drawdown_pct for c in valid]))
+        total_trades = int(sum(c.num_trades for c in valid))
+
+        if is_primary or not primary_per_symbol_sharpe:
+            stability = 1.0 if is_primary else 0.0
+        else:
+            pairs = list(zip([c.sharpe for c in valid], primary_per_symbol_sharpe))
+            stability = (
+                sum(1 for c, p in pairs if c > p) / len(pairs) if pairs else 0.0
+            )
+
+        aggregated.append(ShadowCandidate(
+            algo_id=aid,
+            algo_name=algo_names[aid],
+            sharpe=mean_sharpe,
+            net_return_pct=mean_return,
+            max_drawdown_pct=mean_dd,
+            num_trades=total_trades,
+            stability_score=float(stability),
+            is_primary=is_primary,
+            oos_equity_curve=[],  # No single basket curve — per-symbol curves stay in non-persisted reports
+        ))
+
+    primary_cand = next((c for c in aggregated if c.is_primary), None)
+    if primary_cand is not None:
+        for c in aggregated:
+            if c.is_primary or c.error:
+                continue
+            c.beat_primary = bool(
+                c.sharpe > primary_cand.sharpe and c.stability_score >= 0.5
+            )
+
+    report = ShadowTournamentReport(
+        tournament_id=tournament_id,
+        target_symbol="basket",
+        target_timeframe=timeframe_str,
+        window_start=start,
+        window_end=end,
+        primary_algo_id=primary_algo_id,
+        candidates=aggregated,
+        winners=[c.algo_id for c in aggregated if c.beat_primary],
+    )
+
+    if primary_was_seen:
+        async with get_session() as session:
+            with tenant_scope(tenant_id):
+                for cand in aggregated:
+                    row = ShadowRunModel(
+                        tenant_id=tenant_id,
+                        tournament_id=tournament_id,
+                        primary_algo_id=primary_algo_id,
+                        candidate_algo_id=cand.algo_id,
+                        target_symbol="basket",
+                        target_timeframe=timeframe_str,
+                        window_start=start,
+                        window_end=end,
+                        sharpe=cand.sharpe,
+                        net_return_pct=cand.net_return_pct,
+                        max_drawdown_pct=cand.max_drawdown_pct,
+                        num_trades=cand.num_trades,
+                        stability_score=cand.stability_score,
+                        is_primary=cand.is_primary,
+                        beat_primary=cand.beat_primary,
+                        promotion_status="pending",
+                        meta={
+                            "algo_name": cand.algo_name,
+                            "error": cand.error,
+                            "basket_universe": universe_name,
+                            "basket_symbols": list(symbols),
+                        },
+                    )
+                    session.add(row)
+                await session.commit()
+
+    return report
+
+
 async def list_tournaments(
     *,
     tenant_id: UUID,

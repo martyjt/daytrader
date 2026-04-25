@@ -769,8 +769,12 @@ def _build_shadow_tab(
         "Pick a primary (the incumbent) and N candidates. Each runs "
         "walk-forward on the same symbol/window; candidates that beat the "
         "primary on aggregate Sharpe AND ≥50% fold stability become "
-        "eligible for promotion."
+        "eligible for promotion. Mode: single-symbol, per-symbol universe "
+        "(one tournament per symbol), or basket universe (mean across symbols)."
     ).classes("text-caption text-grey-5 q-pb-sm")
+
+    # State that the universe picker mutates and the run handler reads.
+    universe_state = {"id": None, "name": "", "symbols": []}
 
     with ui.card().classes("w-full"):
         ui.label("Tournament config").classes("text-subtitle1 q-pb-sm")
@@ -794,6 +798,10 @@ def _build_shadow_tab(
             ).props("use-chips").classes("min-w-[420px] flex-grow")
 
         with ui.row().classes("w-full gap-4 items-end q-pt-sm"):
+            mode_in = ui.toggle(
+                {"single": "Single", "per_symbol": "Per-Symbol", "basket": "Basket"},
+                value="single",
+            ).props("color=primary")
             symbol_in = ui.input("Symbol", value="BTC-USD").classes("min-w-[140px]")
             tf_in = ui.select(
                 ["1d", "4h", "1h"], value="1d", label="Timeframe",
@@ -808,17 +816,53 @@ def _build_shadow_tab(
             ).classes("min-w-[160px]")
             folds_in = ui.number("WF Folds", value=5, min=3, max=10)
 
+        # Universe picker — only relevant for per-symbol/basket modes.
+        universe_row = ui.row().classes("w-full gap-2 items-end q-pt-xs")
+        universe_status = ui.label("").classes("text-caption text-grey-6")
+
+        async def _refresh_universe_picker() -> None:
+            universe_row.clear()
+            try:
+                from ..services import list_universes
+
+                universes = await list_universes()
+            except Exception:
+                universes = []
+            with universe_row:
+                if not universes:
+                    ui.label(
+                        "No saved universes — Single mode only. Build one on "
+                        "the Universes page to enable Per-Symbol / Basket modes."
+                    ).classes("text-caption text-grey-6")
+                    return
+                picker = ui.select(
+                    options={
+                        str(u.id): f"{u.name} ({len(u.symbols)})"
+                        for u in universes
+                    },
+                    label="Universe (for Per-Symbol / Basket)",
+                ).classes("min-w-[260px]")
+
+                def _apply_universe(_=None) -> None:
+                    if not picker.value:
+                        return
+                    from uuid import UUID as _UUID
+
+                    uid = _UUID(picker.value)
+                    u = next((x for x in universes if x.id == uid), None)
+                    if not u:
+                        return
+                    universe_state["id"] = u.id
+                    universe_state["name"] = u.name
+                    universe_state["symbols"] = list(u.symbols)
+                    universe_status.text = (
+                        f"Loaded universe: {u.name} ({len(u.symbols)} symbols)"
+                    )
+
+                picker.on_value_change(_apply_universe)
+
     result_area = ui.column().classes("w-full q-pt-md")
     history_area = ui.column().classes("w-full q-pt-md")
-
-    # Optional: pick a saved universe to drive which symbols get tested
-    # (the tournament runs per-symbol, so loading a universe re-runs the
-    # same primary/candidate set on each universe symbol sequentially).
-    async def _run_universe_tournament() -> None:
-        # Placeholder — the main button runs on the single `symbol_in`;
-        # loading a universe swaps symbol_in to the first entry and hints
-        # that multi-symbol per-tournament loops belong to Phase 8+.
-        pass
 
     async def _refresh_history() -> None:
         history_area.clear()
@@ -863,6 +907,117 @@ def _build_shadow_tab(
                 "defaultColDef": {"sortable": True, "resizable": True},
             }).classes("w-full")
 
+    def _render_single_report(report, *, header_prefix: str = "") -> None:
+        """Render one ShadowTournamentReport into the *current* UI context.
+
+        Caller wraps this in a card / expansion / column. Used by all three
+        modes — single-symbol writes one of these; per-symbol writes one
+        per universe symbol; basket writes one synthetic aggregate.
+        """
+        header = (
+            f"{header_prefix}Tournament on {report.target_symbol} "
+            f"{report.target_timeframe} · "
+            f"{len(report.candidates)} algorithm(s) · "
+            f"{len(report.winners)} winner(s)"
+        )
+        with ui.row().classes("w-full items-center"):
+            ui.label(header).classes("text-body1")
+            ui.space()
+            _render_export_button(report, "tournament")
+
+        cols = [
+            {"name": "name", "label": "Algorithm", "field": "name"},
+            {"name": "sharpe", "label": "OOS Sharpe", "field": "sharpe", "sortable": True},
+            {"name": "ret", "label": "OOS Return %", "field": "ret"},
+            {"name": "dd", "label": "Max DD %", "field": "dd"},
+            {"name": "trades", "label": "# Trades", "field": "trades"},
+            {"name": "stab", "label": "Stability", "field": "stab"},
+            {"name": "flag", "label": "Verdict", "field": "flag"},
+        ]
+        table_rows = []
+        for c in report.ranked():
+            flag = "PRIMARY" if c.is_primary else ("WINNER" if c.beat_primary else "—")
+            table_rows.append({
+                "name": c.algo_name + (" *" if c.is_primary else ""),
+                "sharpe": f"{c.sharpe:+.2f}",
+                "ret": f"{c.net_return_pct:+.2f}",
+                "dd": f"{c.max_drawdown_pct:+.2f}",
+                "trades": c.num_trades,
+                "stab": f"{int(c.stability_score * 100)}%",
+                "flag": flag,
+            })
+        ui.aggrid({
+            "columnDefs": cols,
+            "rowData": table_rows,
+            "domLayout": "autoHeight",
+            "defaultColDef": {"sortable": True, "resizable": True},
+        }).classes("w-full")
+
+        action_rows = [c for c in report.ranked() if not c.is_primary and not c.error]
+        if action_rows:
+            winners = [c for c in action_rows if c.beat_primary]
+            with ui.row().classes("w-full items-center q-pt-md"):
+                ui.label("Actions").classes("text-subtitle2")
+                ui.space()
+                if winners:
+                    async def _promote_all_winners() -> None:
+                        from ..services import update_shadow_status_service
+
+                        ok = 0
+                        for c in winners:
+                            try:
+                                await update_shadow_status_service(
+                                    report.tournament_id, c.algo_id, "promoted",
+                                )
+                                ok += 1
+                            except Exception:  # noqa: BLE001
+                                continue
+                        ui.notify(
+                            f"Promoted {ok}/{len(winners)} winners",
+                            type="positive",
+                        )
+
+                    ui.button(
+                        f"Promote all {len(winners)} winner(s)",
+                        icon="north",
+                        on_click=_promote_all_winners,
+                    ).props("color=positive outline dense")
+
+            for c in action_rows:
+                _render_shadow_action_row(report.tournament_id, c)
+
+        curves_series = []
+        for i, c in enumerate(report.ranked()):
+            if not c.oos_equity_curve:
+                continue
+            curves_series.append({
+                "name": c.algo_name + (" *" if c.is_primary else ""),
+                "type": "line",
+                "data": [round(v, 2) for v in c.oos_equity_curve],
+                "smooth": True,
+                "showSymbol": False,
+                "lineStyle": {
+                    "color": RESEARCH_PALETTE[i % len(RESEARCH_PALETTE)],
+                    "width": 3 if c.is_primary else 1.5,
+                },
+            })
+        if curves_series:
+            max_len = max(len(s["data"]) for s in curves_series)
+            ui.echart({
+                "backgroundColor": "transparent",
+                "tooltip": {"trigger": "axis"},
+                "legend": {"textStyle": {"color": "#bbb"}},
+                "xAxis": {
+                    "type": "category",
+                    "data": list(range(max_len)),
+                    "name": "OOS Bar",
+                    "axisLabel": {"color": "#999"},
+                },
+                "yAxis": {"type": "value", "axisLabel": {"color": "#999"}},
+                "series": curves_series,
+                "grid": {"left": "8%", "right": "4%", "top": "12%", "bottom": "10%"},
+            }).classes("w-full").style("height: 360px")
+
     async def _run_tournament() -> None:
         result_area.clear()
         if not primary_in.value or not candidates_in.value:
@@ -872,28 +1027,87 @@ def _build_shadow_tab(
                 )
             return
 
+        mode = mode_in.value or "single"
+        if mode != "single" and not universe_state["symbols"]:
+            with result_area:
+                ui.label(
+                    f"Mode '{mode}' needs a loaded universe — pick one above first."
+                ).classes("text-warning")
+            return
+
+        symbols = (
+            [symbol_in.value] if mode == "single" else universe_state["symbols"]
+        )
         with result_area:
             with ui.row().classes("items-center gap-2"):
                 ui.spinner(size="lg")
                 ui.label(
-                    f"Running tournament: {primary_in.value} vs "
-                    f"{len(candidates_in.value)} candidate(s)..."
+                    f"Running {mode} tournament: {primary_in.value} vs "
+                    f"{len(candidates_in.value)} candidate(s) on "
+                    f"{len(symbols)} symbol(s)..."
                 ).classes("text-grey-5")
 
         try:
-            from ..services import run_shadow_tournament_service
+            if mode == "single":
+                from ..services import run_shadow_tournament_service
 
-            report = await run_shadow_tournament_service(
-                primary_algo_id=primary_in.value,
-                candidate_algo_ids=list(candidates_in.value),
-                symbol_str=symbol_in.value,
-                timeframe_str=tf_in.value,
-                start_str=start_in.value,
-                end_str=end_in.value,
-                initial_capital=float(capital_in.value or 10_000.0),
-                venue=venue_in.value,
-                n_folds=int(folds_in.value or 5),
-            )
+                report = await run_shadow_tournament_service(
+                    primary_algo_id=primary_in.value,
+                    candidate_algo_ids=list(candidates_in.value),
+                    symbol_str=symbol_in.value,
+                    timeframe_str=tf_in.value,
+                    start_str=start_in.value,
+                    end_str=end_in.value,
+                    initial_capital=float(capital_in.value or 10_000.0),
+                    venue=venue_in.value,
+                    n_folds=int(folds_in.value or 5),
+                )
+                result_area.clear()
+                with result_area:
+                    _render_single_report(report)
+            elif mode == "per_symbol":
+                from ..services import run_per_symbol_universe_tournament_service
+
+                bundle = await run_per_symbol_universe_tournament_service(
+                    primary_algo_id=primary_in.value,
+                    candidate_algo_ids=list(candidates_in.value),
+                    symbols=symbols,
+                    universe_name=universe_state["name"],
+                    timeframe_str=tf_in.value,
+                    start_str=start_in.value,
+                    end_str=end_in.value,
+                    initial_capital=float(capital_in.value or 10_000.0),
+                    venue=venue_in.value,
+                    n_folds=int(folds_in.value or 5),
+                )
+                result_area.clear()
+                with result_area:
+                    _render_per_symbol_bundle(bundle)
+            else:  # basket
+                from ..services import run_basket_tournament_service
+
+                report = await run_basket_tournament_service(
+                    primary_algo_id=primary_in.value,
+                    candidate_algo_ids=list(candidates_in.value),
+                    symbols=symbols,
+                    universe_name=universe_state["name"],
+                    timeframe_str=tf_in.value,
+                    start_str=start_in.value,
+                    end_str=end_in.value,
+                    initial_capital=float(capital_in.value or 10_000.0),
+                    venue=venue_in.value,
+                    n_folds=int(folds_in.value or 5),
+                )
+                result_area.clear()
+                with result_area:
+                    ui.label(
+                        f"Basket: {universe_state['name']} "
+                        f"({len(symbols)} symbols, mean across symbols)"
+                    ).classes("text-caption text-grey-5 q-pb-xs")
+                    _render_single_report(
+                        report,
+                        header_prefix=f"BASKET ({len(symbols)} symbols) — ",
+                    )
         except Exception as exc:  # noqa: BLE001
             result_area.clear()
             with result_area:
@@ -901,125 +1115,50 @@ def _build_shadow_tab(
                 ui.label(f"Tournament failed: {exc}").classes("text-negative")
             return
 
-        result_area.clear()
-        with result_area:
-            header = (
-                f"Tournament on {report.target_symbol} {report.target_timeframe} · "
-                f"{len(report.candidates)} algorithm(s) · "
-                f"{len(report.winners)} winner(s)"
-            )
-            with ui.row().classes("w-full items-center"):
-                ui.label(header).classes("text-body1")
-                ui.space()
-                _render_export_button(report, "tournament")
-
-            cols = [
-                {"name": "name", "label": "Algorithm", "field": "name"},
-                {"name": "sharpe", "label": "OOS Sharpe", "field": "sharpe", "sortable": True},
-                {"name": "ret", "label": "OOS Return %", "field": "ret"},
-                {"name": "dd", "label": "Max DD %", "field": "dd"},
-                {"name": "trades", "label": "# Trades", "field": "trades"},
-                {"name": "stab", "label": "Fold Wins", "field": "stab"},
-                {"name": "flag", "label": "Verdict", "field": "flag"},
-            ]
-            table_rows = []
-            for c in report.ranked():
-                flag = "PRIMARY" if c.is_primary else ("WINNER" if c.beat_primary else "—")
-                table_rows.append({
-                    "name": c.algo_name + (" *" if c.is_primary else ""),
-                    "sharpe": f"{c.sharpe:+.2f}",
-                    "ret": f"{c.net_return_pct:+.2f}",
-                    "dd": f"{c.max_drawdown_pct:+.2f}",
-                    "trades": c.num_trades,
-                    "stab": f"{int(c.stability_score * 100)}%",
-                    "flag": flag,
-                })
-            ui.aggrid({
-                "columnDefs": cols,
-                "rowData": table_rows,
-                "domLayout": "autoHeight",
-                "defaultColDef": {"sortable": True, "resizable": True},
-            }).classes("w-full")
-
-            # Action strip: promote / dismiss any candidate (only shown if
-            # there are non-primary candidates — primary doesn't need it).
-            action_rows = [c for c in report.ranked() if not c.is_primary and not c.error]
-            if action_rows:
-                winners = [c for c in action_rows if c.beat_primary]
-
-                with ui.row().classes("w-full items-center q-pt-md"):
-                    ui.label("Actions").classes("text-subtitle2")
-                    ui.space()
-                    if winners:
-                        async def _promote_all_winners() -> None:
-                            from ..services import update_shadow_status_service
-
-                            ok = 0
-                            for c in winners:
-                                try:
-                                    await update_shadow_status_service(
-                                        report.tournament_id, c.algo_id, "promoted",
-                                    )
-                                    ok += 1
-                                except Exception:  # noqa: BLE001
-                                    continue
-                            ui.notify(
-                                f"Promoted {ok}/{len(winners)} winners",
-                                type="positive",
-                            )
-
-                        ui.button(
-                            f"Promote all {len(winners)} winner(s)",
-                            icon="north",
-                            on_click=_promote_all_winners,
-                        ).props("color=positive outline dense")
-
-                for c in action_rows:
-                    _render_shadow_action_row(report.tournament_id, c)
-
-            # Overlay equity curves for quick visual comparison
-            curves_series = []
-            for i, c in enumerate(report.ranked()):
-                if not c.oos_equity_curve:
-                    continue
-                curves_series.append({
-                    "name": c.algo_name + (" *" if c.is_primary else ""),
-                    "type": "line",
-                    "data": [round(v, 2) for v in c.oos_equity_curve],
-                    "smooth": True,
-                    "showSymbol": False,
-                    "lineStyle": {
-                        "color": RESEARCH_PALETTE[i % len(RESEARCH_PALETTE)],
-                        "width": 3 if c.is_primary else 1.5,
-                    },
-                })
-            if curves_series:
-                max_len = max(len(s["data"]) for s in curves_series)
-                ui.echart({
-                    "backgroundColor": "transparent",
-                    "tooltip": {"trigger": "axis"},
-                    "legend": {"textStyle": {"color": "#bbb"}},
-                    "xAxis": {
-                        "type": "category",
-                        "data": list(range(max_len)),
-                        "name": "OOS Bar",
-                        "axisLabel": {"color": "#999"},
-                    },
-                    "yAxis": {
-                        "type": "value",
-                        "axisLabel": {"color": "#999"},
-                    },
-                    "series": curves_series,
-                    "grid": {"left": "8%", "right": "4%", "top": "12%", "bottom": "10%"},
-                }).classes("w-full").style("height: 360px")
-
         await _refresh_history()
+
+    def _render_per_symbol_bundle(bundle) -> None:
+        """Top-level wins-per-algo summary, then one expansion per symbol."""
+        win_counts = bundle.win_counts()
+        names = bundle.algo_names()
+        n_syms = len(bundle.symbols)
+
+        ui.label(
+            f"Universe: {bundle.universe_name} ({n_syms} symbols)"
+        ).classes("text-subtitle1 q-pb-xs")
+
+        if win_counts:
+            with ui.row().classes("w-full gap-3 q-pb-md"):
+                for aid, n in sorted(
+                    win_counts.items(), key=lambda kv: -kv[1]
+                ):
+                    label = names.get(aid, aid)
+                    with ui.card().classes("q-pa-sm"):
+                        ui.label(label).classes("text-caption")
+                        ui.label(f"{n} / {n_syms}").classes(
+                            "text-h6 text-positive"
+                        )
+                        ui.label("symbols won").classes("text-caption text-grey-6")
+        else:
+            ui.label(
+                "No candidate beat the primary on any symbol."
+            ).classes("text-caption text-grey-6 q-pb-sm")
+
+        for report in bundle.per_symbol_reports:
+            with ui.expansion(
+                f"{report.target_symbol} — {len(report.winners)} winner(s)",
+                icon="show_chart",
+                value=(len(report.winners) > 0),  # auto-open ones with winners
+            ).classes("w-full"):
+                with ui.card().classes("w-full"):
+                    _render_single_report(report)
 
     ui.button(
         "Run Tournament", icon="emoji_events", on_click=_run_tournament,
     ).props("color=primary unelevated size=lg").classes("q-mt-sm")
 
     ui.timer(0.2, _refresh_history, once=True)
+    ui.timer(0.2, _refresh_universe_picker, once=True)
 
 
 # ========================================================================
