@@ -23,6 +23,11 @@ async def _startup() -> None:
     async with get_session() as session:
         await seed_default_tenant(session, settings)
 
+    # Phase 3 — fail loudly if encrypted credentials exist but no key is set.
+    from ..core.crypto import assert_encryption_key_for_existing_secrets
+
+    await assert_encryption_key_for_existing_secrets()
+
     # Register built-in algorithms, data adapters, and execution adapters.
     from ..algorithms.registry import AlgorithmRegistry
     from ..data.adapters.registry import AdapterRegistry
@@ -106,11 +111,17 @@ async def _shutdown() -> None:
         except Exception:
             pass
 
-    # Close any live broker connections.
+    # Close any live broker connections (global adapters + per-tenant cache).
     from ..execution.registry import ExecutionRegistry
 
     for name in ExecutionRegistry.available():
         adapter = ExecutionRegistry.get(name)
+        if hasattr(adapter, "close"):
+            try:
+                await adapter.close()
+            except Exception:
+                pass
+    for adapter in ExecutionRegistry.cached_tenant_adapters().values():
         if hasattr(adapter, "close"):
             try:
                 await adapter.close()
@@ -133,6 +144,7 @@ def create_app() -> None:
         admin_users,
         auth,
         bandit_builder,
+        broker_credentials,
         cache,
         charts,
         dag_composer,

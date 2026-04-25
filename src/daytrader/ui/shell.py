@@ -22,6 +22,7 @@ NAV_ITEMS: list[tuple[str, str, str]] = [
     ("Bandit Builder", "/bandit-builder", "casino"),
     ("Universes", "/universes", "pie_chart"),
     ("Plugins", "/plugins", "extension"),
+    ("Broker Keys", "/broker-credentials", "vpn_key"),
     ("Risk Center", "/risk", "shield"),
     ("Signals", "/signals", "radio"),
     ("Journal", "/journal", "history"),

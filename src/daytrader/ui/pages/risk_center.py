@@ -52,6 +52,54 @@ async def risk_center_page() -> None:
                 "size=lg unelevated"
             )
 
+    # ---- Live broker balances --------------------------------------------
+    ui.label("Live Broker Balances").classes("text-h6 q-pt-lg q-pb-sm")
+    balances_container = ui.row().classes("w-full gap-4 q-mb-md")
+
+    async def _refresh_balances() -> None:
+        from ..services_brokers import live_broker_balances
+
+        balances_container.clear()
+        with balances_container:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner(size="sm")
+                ui.label("Fetching balances…").classes("text-caption text-grey-5")
+
+        rows = await live_broker_balances()
+        balances_container.clear()
+        with balances_container:
+            if not rows:
+                ui.label(
+                    "No broker credentials saved. Add API keys on the "
+                    "Broker Keys page to see live balances here."
+                ).classes("text-caption text-grey-6")
+                return
+            for row in rows:
+                with ui.card().classes("q-pa-md min-w-[200px]"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon(
+                            "account_balance_wallet",
+                            color="positive" if row.ok else "negative",
+                            size="sm",
+                        )
+                        ui.label(row.broker_name).classes(
+                            "text-caption text-grey-5"
+                        )
+                        ui.badge(
+                            "testnet" if row.is_testnet else "live",
+                            color="warning" if row.is_testnet else "negative",
+                        ).props("outline")
+                    if row.ok:
+                        ui.label(f"${float(row.balance):,.2f}").classes(
+                            "text-h5 text-weight-bold q-pt-xs"
+                        )
+                    else:
+                        ui.label(row.error or "error").classes(
+                            "text-body2 text-negative q-pt-xs"
+                        )
+
+    ui.timer(0.5, _refresh_balances, once=True)
+
     # ---- Global risk metrics (placeholder) --------------------------------
     ui.label("Global Risk Metrics").classes("text-h6 q-pt-lg q-pb-sm")
 

@@ -236,7 +236,7 @@ class TradingLoop:
         current_price = closes[i]
 
         # Resolve execution adapter (venue from resolved config takes precedence)
-        executor = self._resolve_executor(persona, venue=venue)
+        executor = await self._resolve_executor(persona, venue=venue)
         if executor is None:
             return
 
@@ -400,8 +400,14 @@ class TradingLoop:
                 await repo.update(persona.id, current_equity=equity)
                 await session.commit()
 
-    def _resolve_executor(self, persona: Any, venue: str | None = None) -> Any | None:
+    async def _resolve_executor(
+        self, persona: Any, venue: str | None = None
+    ) -> Any | None:
         """Resolve the execution adapter for a persona.
+
+        Paper personas use the global ``PaperExecutor``. Live personas resolve
+        a *per-tenant* adapter via ``ExecutionRegistry.get_for_tenant`` —
+        which reads the tenant's encrypted broker credentials.
 
         ``venue`` overrides ``persona.meta.venue`` when provided — used by the
         resolution chain so a venue from a bound StrategyConfig takes
@@ -417,32 +423,28 @@ class TradingLoop:
                 logger.error("PaperExecutor not registered")
                 return None
 
-        # Live mode — resolve by asset class or venue preference
+        # Live mode — resolve broker name, then per-tenant credentials
         if venue is None:
             venue = meta.get("venue")
-        if venue:
-            try:
-                return ExecutionRegistry.get(venue)
-            except KeyError:
-                logger.error("Execution adapter %s not registered", venue)
+        if not venue:
+            if persona.asset_class == "crypto":
+                venue = "binance"
+            elif persona.asset_class == "equities":
+                venue = "alpaca"
+            else:
+                logger.error(
+                    "Cannot resolve executor for asset_class=%s",
+                    persona.asset_class,
+                )
                 return None
 
-        # Fallback: asset_class → default adapter
-        if persona.asset_class == "crypto":
-            try:
-                return ExecutionRegistry.get("binance")
-            except KeyError:
-                logger.error("No crypto execution adapter registered")
-                return None
-        elif persona.asset_class == "equities":
-            try:
-                return ExecutionRegistry.get("alpaca")
-            except KeyError:
-                logger.error("No equities execution adapter registered")
-                return None
-
-        logger.error("Cannot resolve executor for asset_class=%s", persona.asset_class)
-        return None
+        adapter = await ExecutionRegistry.get_for_tenant(persona.tenant_id, venue)
+        if adapter is None:
+            logger.error(
+                "No %s credentials on file for tenant %s — persona %s cannot trade live",
+                venue, persona.tenant_id, persona.name,
+            )
+        return adapter
 
     @staticmethod
     def _resolve_data_adapter(asset_class: str) -> Any | None:
