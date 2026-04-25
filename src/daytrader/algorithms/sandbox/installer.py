@@ -251,6 +251,92 @@ async def _upsert_db_row(
 # ---------------------------------------------------------------------------
 
 
+async def set_plugin_enabled(
+    *,
+    manager: PluginWorkerManager,
+    tenant_id: UUID,
+    algorithm_id: str,
+    enabled: bool,
+) -> bool:
+    """Toggle a plugin's enabled state.
+
+    Disabling unregisters from the per-tenant overlay and unloads from the
+    worker (best-effort) but keeps the file and DB row so re-enabling is
+    cheap. Returns True if the row existed and the state changed.
+    """
+    async with get_session() as session:
+        row = (
+            await session.execute(
+                select(TenantPluginModel).where(
+                    TenantPluginModel.tenant_id == tenant_id,
+                    TenantPluginModel.algorithm_id == algorithm_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return False
+        if row.is_enabled == enabled:
+            return False
+        row.is_enabled = enabled
+        if enabled:
+            row.last_error = None
+        manifest_payload = json.loads(row.manifest_json)
+        manifest = _manifest_from_payload(manifest_payload)
+        warmup = row.warmup_bars
+        filename = row.filename
+        await session.commit()
+
+    if enabled:
+        plugin_path = manager.tenant_dir(tenant_id) / filename
+        adapter = SandboxedAlgorithm(
+            manager=manager,
+            tenant_id=tenant_id,
+            plugin_path=plugin_path,
+            algo_id=algorithm_id,
+            manifest=manifest,
+            warmup_bars=warmup,
+        )
+        AlgorithmRegistry.register_for_tenant(tenant_id, adapter)
+    else:
+        AlgorithmRegistry.unregister_for_tenant(tenant_id, algorithm_id)
+        if manager.has_handle(tenant_id):
+            try:
+                handle = await manager.get_handle(tenant_id)
+                await handle.unload(algorithm_id)
+            except PluginRuntimeError:
+                pass
+
+    return True
+
+
+async def record_plugin_error(
+    *,
+    tenant_id: UUID,
+    algorithm_id: str,
+    message: str,
+) -> None:
+    """Persist a plugin's most recent runtime error to the DB row.
+
+    Called by the adapter when ``on_bar_async`` or ``replay_bars`` raises so
+    the Plugins page can show the user what went wrong without them having
+    to grep server logs.
+    """
+    truncated = (message or "").strip()[:2000] or "(empty)"
+    async with get_session() as session:
+        row = (
+            await session.execute(
+                select(TenantPluginModel).where(
+                    TenantPluginModel.tenant_id == tenant_id,
+                    TenantPluginModel.algorithm_id == algorithm_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return
+        row.last_error = truncated
+        await session.commit()
+
+
 async def uninstall_plugin(
     *,
     manager: PluginWorkerManager,

@@ -144,6 +144,23 @@ class SandboxedAlgorithm(Algorithm):
     def _is_not_loaded_error(self, exc: PluginRuntimeError) -> bool:
         return exc.error_type == "PluginError" and "not loaded" in exc.error_message
 
+    async def _record_error(self, message: str) -> None:
+        """Persist the plugin's last error to the DB row, best-effort.
+
+        Late-imported to avoid the adapter ↔ installer module cycle. DB
+        write failures are swallowed — operational visibility is nice to
+        have but mustn't bring the adapter down.
+        """
+        try:
+            from .installer import record_plugin_error
+            await record_plugin_error(
+                tenant_id=self._tenant_id,
+                algorithm_id=self._algo_id,
+                message=message,
+            )
+        except Exception:  # pragma: no cover — defensive
+            logger.exception("Failed to record plugin error for %s", self._algo_id)
+
     async def on_bar_async(self, ctx: AlgorithmContext) -> Signal | None:
         """Run one bar in the worker. Pushes captured signals to ctx.emit_fn."""
         handle = await self._manager.get_handle(self._tenant_id)
@@ -155,12 +172,17 @@ class SandboxedAlgorithm(Algorithm):
                 # Worker was respawned (after crash or first contact) and
                 # has no plugin state. Reload and retry once.
                 await self._ensure_loaded()
-                result = await handle.on_bar(self._algo_id, ctx_payload)
+                try:
+                    result = await handle.on_bar(self._algo_id, ctx_payload)
+                except PluginRuntimeError as exc2:
+                    await self._record_error(f"{exc2.error_type}: {exc2.error_message}")
+                    return None
             else:
-                logger.exception(
-                    "Sandboxed plugin %s on_bar failed for tenant %s",
-                    self._algo_id, self._tenant_id,
+                logger.warning(
+                    "Sandboxed plugin %s on_bar failed for tenant %s: %s",
+                    self._algo_id, self._tenant_id, exc.error_message,
                 )
+                await self._record_error(f"{exc.error_type}: {exc.error_message}")
                 return None
 
         signals = [protocol.deserialize_signal(s) for s in result.get("signals", [])]
@@ -197,6 +219,7 @@ class SandboxedAlgorithm(Algorithm):
                 await self._ensure_loaded()
                 results = await handle.replay_bars(self._algo_id, payloads, **kwargs)
             else:
+                await self._record_error(f"{exc.error_type}: {exc.error_message}")
                 raise
 
         out: list[Signal | None] = []

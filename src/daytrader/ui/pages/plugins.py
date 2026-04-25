@@ -25,6 +25,7 @@ from ...algorithms.sandbox.installer import (
     InstallError,
     install_plugin,
     list_for_tenant,
+    set_plugin_enabled,
     uninstall_plugin,
 )
 from ...auth.session import current_session, current_tenant_id, current_user_id
@@ -132,7 +133,7 @@ async def plugins_page() -> None:
             )
 
     def _render_plugin_card(plug: Any, owner: bool) -> None:
-        with ui.card().classes("w-72"):
+        with ui.card().classes("w-80"):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label(plug.name).classes("text-h6")
                 if plug.is_enabled:
@@ -149,10 +150,35 @@ async def plugins_page() -> None:
                 "text-caption text-grey-7"
             )
             if plug.last_error:
-                ui.label(f"⚠ {plug.last_error[:80]}").classes(
-                    "text-caption text-negative"
-                )
+                with ui.expansion("Last error", icon="error_outline").classes(
+                    "w-full bg-red-9 text-white"
+                ).props("dense"):
+                    ui.label(plug.last_error).classes(
+                        "text-caption text-mono"
+                    ).style("white-space: pre-wrap; word-break: break-word")
             if owner:
+                async def _do_toggle(
+                    p_id: str = plug.algorithm_id,
+                    new_state: bool = not plug.is_enabled,
+                ) -> None:
+                    if tenant_id is None:
+                        return
+                    try:
+                        await set_plugin_enabled(
+                            manager=get_active_manager(),
+                            tenant_id=tenant_id,
+                            algorithm_id=p_id,
+                            enabled=new_state,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        ui.notify(f"Toggle failed: {exc}", type="negative")
+                        return
+                    ui.notify(
+                        f"{'Enabled' if new_state else 'Disabled'} {p_id}",
+                        type="positive",
+                    )
+                    await _render()
+
                 async def _do_uninstall(p_id: str = plug.algorithm_id) -> None:
                     if tenant_id is None:
                         return
@@ -171,11 +197,17 @@ async def plugins_page() -> None:
                         ui.notify(f"Plugin {p_id} not found", type="warning")
                     await _render()
 
-                ui.button(
-                    "Uninstall",
-                    icon="delete_outline",
-                    on_click=_do_uninstall,
-                ).props("flat dense color=negative").classes("q-mt-xs")
+                with ui.row().classes("w-full q-mt-xs gap-2"):
+                    ui.button(
+                        "Disable" if plug.is_enabled else "Enable",
+                        icon="toggle_off" if plug.is_enabled else "toggle_on",
+                        on_click=_do_toggle,
+                    ).props("flat dense color=primary")
+                    ui.button(
+                        "Uninstall",
+                        icon="delete_outline",
+                        on_click=_do_uninstall,
+                    ).props("flat dense color=negative")
 
     # ---- upload (owner only) -----------------------------------------------
     if is_owner and tenant_id is not None:

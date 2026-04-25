@@ -18,7 +18,9 @@ from daytrader.algorithms.sandbox.installer import (
     InstallError,
     install_plugin,
     list_for_tenant,
+    record_plugin_error,
     restore_for_tenant,
+    set_plugin_enabled,
     uninstall_plugin,
 )
 from daytrader.storage.database import Base
@@ -265,6 +267,90 @@ async def test_uninstall_unknown_returns_false(db, manager):
 # ---------------------------------------------------------------------------
 # Startup hydration
 # ---------------------------------------------------------------------------
+
+
+async def test_disable_unregisters_overlay_keeps_file(db, manager):
+    await install_plugin(
+        manager=manager, tenant_id=TENANT_A, user_id=USER_A,
+        filename="hello_algo.py", algorithm_id="hello_algo",
+        payload=_GOOD_PLUGIN,
+    )
+    file_path = manager.tenant_dir(TENANT_A) / "hello_algo.py"
+
+    changed = await set_plugin_enabled(
+        manager=manager, tenant_id=TENANT_A,
+        algorithm_id="hello_algo", enabled=False,
+    )
+    assert changed is True
+    # Disabled plugins disappear from the overlay but stay on disk + DB.
+    assert "hello_algo" not in AlgorithmRegistry.available(tenant_id=TENANT_A)
+    assert file_path.is_file()
+    rows = await list_for_tenant(TENANT_A)
+    assert len(rows) == 1 and rows[0].is_enabled is False
+
+    # Re-enable repopulates the overlay.
+    changed_back = await set_plugin_enabled(
+        manager=manager, tenant_id=TENANT_A,
+        algorithm_id="hello_algo", enabled=True,
+    )
+    assert changed_back is True
+    assert "hello_algo" in AlgorithmRegistry.available(tenant_id=TENANT_A)
+
+
+async def test_set_enabled_idempotent(db, manager):
+    await install_plugin(
+        manager=manager, tenant_id=TENANT_A, user_id=USER_A,
+        filename="hello_algo.py", algorithm_id="hello_algo",
+        payload=_GOOD_PLUGIN,
+    )
+    # Already enabled — second call is a no-op (returns False).
+    assert await set_plugin_enabled(
+        manager=manager, tenant_id=TENANT_A,
+        algorithm_id="hello_algo", enabled=True,
+    ) is False
+
+
+async def test_set_enabled_unknown_returns_false(db, manager):
+    assert await set_plugin_enabled(
+        manager=manager, tenant_id=TENANT_A,
+        algorithm_id="never_existed", enabled=False,
+    ) is False
+
+
+async def test_record_plugin_error_persists_to_row(db, manager):
+    await install_plugin(
+        manager=manager, tenant_id=TENANT_A, user_id=USER_A,
+        filename="hello_algo.py", algorithm_id="hello_algo",
+        payload=_GOOD_PLUGIN,
+    )
+    await record_plugin_error(
+        tenant_id=TENANT_A, algorithm_id="hello_algo",
+        message="ValueError: something blew up",
+    )
+    rows = await list_for_tenant(TENANT_A)
+    assert rows[0].last_error == "ValueError: something blew up"
+
+
+async def test_record_plugin_error_truncates_long_messages(db, manager):
+    await install_plugin(
+        manager=manager, tenant_id=TENANT_A, user_id=USER_A,
+        filename="hello_algo.py", algorithm_id="hello_algo",
+        payload=_GOOD_PLUGIN,
+    )
+    huge = "x" * 5000
+    await record_plugin_error(
+        tenant_id=TENANT_A, algorithm_id="hello_algo", message=huge,
+    )
+    rows = await list_for_tenant(TENANT_A)
+    assert len(rows[0].last_error) <= 2000
+
+
+async def test_record_plugin_error_unknown_is_silent(db, manager):
+    # No row exists → no-op, no exception.
+    await record_plugin_error(
+        tenant_id=TENANT_A, algorithm_id="no_such_thing",
+        message="anything",
+    )
 
 
 async def test_restore_for_tenant_rebuilds_overlay_without_spawning(db, manager):
