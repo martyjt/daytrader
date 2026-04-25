@@ -439,3 +439,116 @@ async def test_resolve_persona_config_invalid_strategy_id(session, _patch_sessio
 
     assert algo_id == "buy_hold"
     assert symbol == "BTC-USD"
+
+
+# ---------------------------------------------------------------------------
+# Signal persistence + pubsub fan-out (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+async def test_persist_and_publish_signal_writes_row_and_publishes(
+    session, _patch_session
+):
+    """A signal emitted by the loop is persisted AND fanned out on the bus."""
+    from sqlalchemy import select
+
+    from daytrader.core.pubsub import (
+        SignalEvent,
+        reset_signal_bus,
+        signal_bus,
+    )
+    from daytrader.core.types.signals import Signal
+    from daytrader.storage.models import SignalModel
+
+    reset_signal_bus()
+
+    pid = uuid4()
+    with tenant_scope(TENANT_ID):
+        repo = TenantRepository(session, PersonaModel)
+        persona = await repo.create(
+            id=pid,
+            name="Pub Bot",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={},
+        )
+        await session.commit()
+
+    sig = Signal.new(
+        symbol_key="BTC-USD",
+        score=0.8,
+        confidence=0.7,
+        source="test",
+        reason="unit test",
+    )
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+
+    bus = signal_bus()
+    with bus.subscribe(TENANT_ID) as queue:
+        await loop._persist_and_publish_signal(persona, sig)
+        event = await asyncio.wait_for(queue.get(), timeout=1.0)
+
+    assert isinstance(event, SignalEvent)
+    assert event.signal_id == sig.id
+    assert event.tenant_id == TENANT_ID
+    assert event.persona_id == pid
+    assert event.symbol_key == "BTC-USD"
+    assert event.score == pytest.approx(0.8)
+
+    # Row was persisted under the tenant.
+    rows = (
+        await session.execute(
+            select(SignalModel).where(SignalModel.tenant_id == TENANT_ID)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].id == sig.id
+    assert rows[0].persona_id == pid
+    assert rows[0].score == pytest.approx(0.8)
+
+
+async def test_persist_failure_does_not_publish(session, _patch_session, monkeypatch):
+    """When the DB write fails, no event is broadcast."""
+    from daytrader.core.pubsub import reset_signal_bus, signal_bus
+    from daytrader.core.types.signals import Signal
+
+    reset_signal_bus()
+
+    pid = uuid4()
+    with tenant_scope(TENANT_ID):
+        repo = TenantRepository(session, PersonaModel)
+        persona = await repo.create(
+            id=pid,
+            name="Fail Bot",
+            mode="paper",
+            asset_class="crypto",
+            base_currency="USDT",
+            initial_capital=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            meta={},
+        )
+        await session.commit()
+
+    sig = Signal.new(
+        symbol_key="BTC-USD", score=0.5, source="test", reason=""
+    )
+
+    # Force the repo create to blow up.
+    from daytrader.storage import repository as repo_module
+
+    async def _boom(self, **_kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(repo_module.TenantRepository, "create", _boom)
+
+    loop = TradingLoop(tenant_id=TENANT_ID)
+    bus = signal_bus()
+    with bus.subscribe(TENANT_ID) as queue:
+        await loop._persist_and_publish_signal(persona, sig)
+        # No event should arrive; assert the queue stays empty briefly.
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(queue.get(), timeout=0.1)

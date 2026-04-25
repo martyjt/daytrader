@@ -26,6 +26,7 @@ import polars as pl
 from ..algorithms.base import Algorithm
 from ..algorithms.registry import AlgorithmRegistry
 from ..core.context import AlgorithmContext, tenant_scope
+from ..core.pubsub import SignalEvent, signal_bus
 from ..core.types.bars import Bar, Timeframe
 from ..core.types.common import utcnow
 from ..core.types.orders import Order, OrderSide, OrderStatus, OrderType
@@ -33,7 +34,7 @@ from ..core.types.signals import Signal
 from ..core.types.symbols import Symbol
 from ..data.adapters.registry import AdapterRegistry
 from ..storage.database import get_session
-from ..storage.models import PersonaModel, StrategyConfigModel
+from ..storage.models import PersonaModel, SignalModel, StrategyConfigModel
 from ..storage.repository import TenantRepository
 
 from .registry import ExecutionRegistry
@@ -232,6 +233,11 @@ class TradingLoop:
                 persona.tenant_id, persona.id, signal
             )
 
+        # Persist the signal row, then fan it out to live UI subscribers.
+        # Publication happens *after* commit so a subscriber that re-reads
+        # the DB will see the same row that fired the event.
+        await self._persist_and_publish_signal(persona, signal)
+
         # Determine action
         current_price = closes[i]
 
@@ -389,6 +395,54 @@ class TradingLoop:
                 live = list(await repo.get_all(mode="live"))
                 paper = list(await repo.get_all(mode="paper"))
                 return live + paper
+
+    async def _persist_and_publish_signal(
+        self, persona: Any, signal: Signal
+    ) -> None:
+        """Insert a ``SignalModel`` row and broadcast on the in-process bus.
+
+        Persistence failures are logged but never propagated — a row that
+        can't be written must not stop the live trading cycle.
+        """
+        try:
+            async with get_session() as session:
+                with tenant_scope(persona.tenant_id):
+                    repo = TenantRepository(session, SignalModel)
+                    row = await repo.create(
+                        id=signal.id,
+                        persona_id=persona.id,
+                        symbol_key=signal.symbol_key,
+                        score=signal.score,
+                        confidence=signal.confidence,
+                        source=signal.source,
+                        reason=signal.reason or "",
+                        meta=dict(signal.metadata or {}),
+                    )
+                    await session.commit()
+                    created_at = row.created_at
+        except Exception:
+            logger.exception(
+                "Failed to persist signal %s for persona %s", signal.id, persona.id
+            )
+            return
+
+        try:
+            signal_bus().publish(
+                persona.tenant_id,
+                SignalEvent(
+                    tenant_id=persona.tenant_id,
+                    persona_id=persona.id,
+                    signal_id=signal.id,
+                    symbol_key=signal.symbol_key,
+                    score=signal.score,
+                    confidence=signal.confidence,
+                    source=signal.source,
+                    reason=signal.reason or "",
+                    created_at=created_at.isoformat() if created_at else "",
+                ),
+            )
+        except Exception:
+            logger.exception("signal_bus publish failed for signal %s", signal.id)
 
     async def _update_persona_equity(
         self, persona: Any, equity: Decimal
