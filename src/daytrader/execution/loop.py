@@ -33,6 +33,7 @@ from ..core.types.orders import Order, OrderSide, OrderStatus, OrderType
 from ..core.types.signals import Signal
 from ..core.types.symbols import Symbol
 from ..data.adapters.registry import AdapterRegistry
+from ..data.marketdata_bus import get_active_bus
 from ..storage.database import get_session
 from ..storage.models import (
     DiscoveryModel,
@@ -171,8 +172,15 @@ class TradingLoop:
         from datetime import timedelta
 
         start = now - timedelta(days=lookback_days)
+        # Route through the shared market-data bus when one is installed
+        # so concurrent personas trading the same symbol+timeframe
+        # share a single OHLCV fetch per cache window.
+        bus = get_active_bus()
         try:
-            data = await adapter.fetch_ohlcv(symbol, timeframe, start, now)
+            if bus is not None:
+                data = await bus.fetch_ohlcv(adapter, symbol, timeframe, start, now)
+            else:
+                data = await adapter.fetch_ohlcv(symbol, timeframe, start, now)
         except Exception:
             logger.exception("Failed to fetch data for %s", symbol_str)
             return

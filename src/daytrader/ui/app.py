@@ -68,6 +68,15 @@ async def _startup() -> None:
     await restore_all_at_startup(plugin_manager)
     app.state.plugin_manager = plugin_manager
 
+    # Phase 9 — install the shared market-data bus so concurrent
+    # personas trading the same symbol/timeframe collapse to one fetch
+    # per (~30s) cache window.
+    from ..data.marketdata_bus import MarketDataBus, set_active_bus
+
+    market_data_bus = MarketDataBus()
+    set_active_bus(market_data_bus)
+    app.state.market_data_bus = market_data_bus
+
     # Initialise the journal writer, kill switch, and global risk monitor.
     from ..journal.writer import JournalWriter
     from ..execution.kill_switch import init_kill_switch
@@ -136,6 +145,11 @@ async def _shutdown() -> None:
             pass
         from ..algorithms.sandbox import set_active_manager
         set_active_manager(None)
+
+    # Clear the market-data bus singleton.
+    from ..data.marketdata_bus import set_active_bus
+
+    set_active_bus(None)
 
     # Close any live broker connections (global adapters + per-tenant cache).
     from ..execution.registry import ExecutionRegistry
