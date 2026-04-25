@@ -31,11 +31,13 @@ async def research_lab_page() -> None:
         return
 
     from ...algorithms.registry import AlgorithmRegistry
+    from ...auth.session import current_tenant_id
     from ...backtest.fees import VENUE_PROFILES
 
-    algo_ids = AlgorithmRegistry.available()
+    _tid = current_tenant_id()
+    algo_ids = AlgorithmRegistry.available(tenant_id=_tid)
     algo_labels = {
-        aid: AlgorithmRegistry.get(aid).manifest.name for aid in algo_ids
+        aid: AlgorithmRegistry.get(aid, tenant_id=_tid).manifest.name for aid in algo_ids
     }
     venue_labels = {k: v.venue for k, v in VENUE_PROFILES.items()}
 

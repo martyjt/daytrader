@@ -52,6 +52,22 @@ async def _startup() -> None:
     _bandits_dir = Path(__file__).resolve().parents[3] / "data" / "bandits"
     load_all_bandits(_bandits_dir)
 
+    # Phase 6 — start the plugin sandbox manager and rebuild every tenant's
+    # overlay from DB rows. Workers stay un-spawned until first use; the
+    # adapter caches each plugin's manifest on disk so we don't pay process
+    # startup just to populate the algo picker.
+    from ..algorithms.sandbox import (
+        PluginWorkerManager,
+        default_uploads_dir,
+        set_active_manager,
+    )
+    from ..algorithms.sandbox.installer import restore_all_at_startup
+
+    plugin_manager = PluginWorkerManager(base_dir=default_uploads_dir())
+    set_active_manager(plugin_manager)
+    await restore_all_at_startup(plugin_manager)
+    app.state.plugin_manager = plugin_manager
+
     # Initialise the journal writer, kill switch, and global risk monitor.
     from ..journal.writer import JournalWriter
     from ..execution.kill_switch import init_kill_switch
@@ -110,6 +126,16 @@ async def _shutdown() -> None:
             await manager.stop_all()
         except Exception:
             pass
+
+    # Shut down all plugin worker subprocesses.
+    plugin_manager = getattr(app.state, "plugin_manager", None)
+    if plugin_manager:
+        try:
+            await plugin_manager.shutdown_all()
+        except Exception:
+            pass
+        from ..algorithms.sandbox import set_active_manager
+        set_active_manager(None)
 
     # Close any live broker connections (global adapters + per-tenant cache).
     from ..execution.registry import ExecutionRegistry

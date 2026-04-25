@@ -163,6 +163,21 @@ class BacktestEngine:
         if params:
             resolved_params.update(params)
 
+        # Sandboxed plugins must run their per-bar work in the worker
+        # subprocess. Doing one round-trip per bar would be ruinous; instead
+        # we batch the whole bar series into a single ``replay_bars`` RPC,
+        # then hand the resulting signal-by-bar dict to ``_simulate``. The
+        # CPU-bound trading-decision loop stays in a worker thread.
+        from ..algorithms.sandbox import SandboxedAlgorithm
+
+        sandbox_signals: dict[int, list[Signal]] | None = None
+        sandbox_logs: dict[int, list[dict[str, Any]]] | None = None
+        if isinstance(algorithm, SandboxedAlgorithm):
+            sandbox_signals, sandbox_logs = await self._precompute_sandbox(
+                algorithm=algorithm, symbol=symbol, timeframe=timeframe,
+                data=data, params=resolved_params,
+            )
+
         # Run the CPU-bound simulation in a worker thread so the
         # asyncio event loop stays responsive. Without this, long
         # composite backtests (5+ seconds) block NiceGUI's websocket
@@ -175,7 +190,86 @@ class BacktestEngine:
             initial_capital, fee_model, resolved_venue,
             risk_config=risk_config,
             params=resolved_params,
+            sandbox_signals=sandbox_signals,
+            sandbox_logs=sandbox_logs,
         )
+
+    async def _precompute_sandbox(
+        self,
+        *,
+        algorithm: "SandboxedAlgorithm",
+        symbol: Symbol,
+        timeframe: Timeframe,
+        data: pl.DataFrame,
+        params: dict[str, Any],
+    ) -> tuple[dict[int, list[Signal]], dict[int, list[dict[str, Any]]]]:
+        """Run a sandboxed algorithm over every post-warmup bar in one RPC.
+
+        Returns ``(signals, logs)`` keyed by bar index. The trading-decision
+        loop in ``_simulate`` reads from these dicts instead of calling
+        ``algorithm.on_bar`` per bar.
+        """
+        closes = data["close"].to_numpy().astype(float)
+        opens = data["open"].to_numpy().astype(float)
+        highs = data["high"].to_numpy().astype(float)
+        lows = data["low"].to_numpy().astype(float)
+        volumes = data["volume"].to_numpy().astype(float)
+        timestamps = data["timestamp"].to_list()
+        n_bars = len(closes)
+        warmup = algorithm.warmup_bars()
+
+        signals: dict[int, list[Signal]] = {}
+        logs: dict[int, list[dict[str, Any]]] = {}
+        if n_bars <= warmup:
+            return signals, logs
+
+        tenant_id = uuid4()
+        persona_id = uuid4()
+        pre_contexts: list[AlgorithmContext] = []
+        pre_emitted: list[list[Signal]] = []
+        pre_logs: list[list[dict[str, Any]]] = []
+        pre_indices: list[int] = []
+        for j in range(warmup, n_bars):
+            em: list[Signal] = []
+            dl: list[dict[str, Any]] = []
+            pre_contexts.append(AlgorithmContext(
+                tenant_id=tenant_id,
+                persona_id=persona_id,
+                algorithm_id=algorithm.manifest.id,
+                symbol=symbol,
+                timeframe=timeframe,
+                now=timestamps[j],
+                bar=Bar(
+                    timestamp=timestamps[j],
+                    open=Decimal(str(opens[j])),
+                    high=Decimal(str(highs[j])),
+                    low=Decimal(str(lows[j])),
+                    close=Decimal(str(closes[j])),
+                    volume=Decimal(str(volumes[j])),
+                ),
+                history_arrays={
+                    "close": closes[: j + 1],
+                    "open": opens[: j + 1],
+                    "high": highs[: j + 1],
+                    "low": lows[: j + 1],
+                    "volume": volumes[: j + 1],
+                },
+                features={},
+                params=params or {},
+                emit_fn=em.append,
+                log_fn=lambda msg, fields, _l=dl, _i=j, _ts=timestamps[j]: _l.append(
+                    {"bar": _i, "timestamp": str(_ts), "message": msg, **fields}
+                ),
+            ))
+            pre_emitted.append(em)
+            pre_logs.append(dl)
+            pre_indices.append(j)
+
+        await algorithm.replay_bars(pre_contexts)
+        for idx, em, dl in zip(pre_indices, pre_emitted, pre_logs):
+            signals[idx] = em
+            logs[idx] = dl
+        return signals, logs
 
     def _simulate(
         self,
@@ -189,6 +283,8 @@ class BacktestEngine:
         *,
         risk_config: RiskConfig | None = None,
         params: dict[str, Any] | None = None,
+        sandbox_signals: dict[int, list[Signal]] | None = None,
+        sandbox_logs: dict[int, list[dict[str, Any]]] | None = None,
     ) -> BacktestResult:
         if risk_config is None:
             risk_config = RiskConfig.disabled()
@@ -219,6 +315,13 @@ class BacktestEngine:
 
         tenant_id = uuid4()
         persona_id = uuid4()
+
+        # Sandboxed plugin signals are pre-computed in ``run()`` (which is
+        # async) and passed in as a dict keyed by bar index. The per-bar
+        # path below reads them out instead of calling on_bar.
+        is_sandboxed = sandbox_signals is not None
+        sandbox_signals = sandbox_signals or {}
+        sandbox_logs = sandbox_logs or {}
 
         import time as _time
         for i in range(n_bars):
@@ -362,30 +465,35 @@ class BacktestEngine:
             )
 
             emitted: list[Signal] = []
-            ctx = AlgorithmContext(
-                tenant_id=tenant_id,
-                persona_id=persona_id,
-                algorithm_id=algorithm.manifest.id,
-                symbol=symbol,
-                timeframe=timeframe,
-                now=timestamps[i],
-                bar=bar,
-                history_arrays={
-                    "close": closes[: i + 1],
-                    "open": opens[: i + 1],
-                    "high": highs[: i + 1],
-                    "low": lows[: i + 1],
-                    "volume": volumes[: i + 1],
-                },
-                features={},
-                params=params or {},
-                emit_fn=emitted.append,
-                log_fn=lambda msg, fields, _i=i, _ts=timestamps[i]: debug_logs.append(
-                    {"bar": _i, "timestamp": str(_ts), "message": msg, **fields}
-                ),
-            )
+            if is_sandboxed:
+                # Pull the signal we computed pre-loop in the replay_bars batch.
+                emitted = list(sandbox_signals.get(i, []))
+                debug_logs.extend(sandbox_logs.get(i, []))
+            else:
+                ctx = AlgorithmContext(
+                    tenant_id=tenant_id,
+                    persona_id=persona_id,
+                    algorithm_id=algorithm.manifest.id,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    now=timestamps[i],
+                    bar=bar,
+                    history_arrays={
+                        "close": closes[: i + 1],
+                        "open": opens[: i + 1],
+                        "high": highs[: i + 1],
+                        "low": lows[: i + 1],
+                        "volume": volumes[: i + 1],
+                    },
+                    features={},
+                    params=params or {},
+                    emit_fn=emitted.append,
+                    log_fn=lambda msg, fields, _i=i, _ts=timestamps[i]: debug_logs.append(
+                        {"bar": _i, "timestamp": str(_ts), "message": msg, **fields}
+                    ),
+                )
 
-            algorithm.on_bar(ctx)
+                algorithm.on_bar(ctx)
             all_signals.extend(emitted)
 
             # Skip signal execution if risk exit already happened or daily halted

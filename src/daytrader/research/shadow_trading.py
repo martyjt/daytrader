@@ -142,7 +142,7 @@ async def run_shadow_tournament(
 
     for aid in all_ids:
         try:
-            algorithm = AlgorithmRegistry.get(aid)
+            algorithm = AlgorithmRegistry.get(aid, tenant_id=tenant_id)
             wf = await engine.run(
                 algorithm=algorithm,
                 symbol=symbol,
@@ -173,7 +173,7 @@ async def run_shadow_tournament(
     for aid, result in candidates_raw:
         algo_name = aid
         try:
-            algo_name = AlgorithmRegistry.get(aid).manifest.name
+            algo_name = AlgorithmRegistry.get(aid, tenant_id=tenant_id).manifest.name
         except Exception:
             pass
         is_primary = aid == primary_algo_id

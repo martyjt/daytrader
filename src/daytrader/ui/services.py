@@ -126,7 +126,7 @@ async def run_backtest_service(
     from ..core.types.bars import Timeframe
     from ..core.types.symbols import Symbol
 
-    algorithm = AlgorithmRegistry.get(algo_id)
+    algorithm = AlgorithmRegistry.get(algo_id, tenant_id=_tenant_id())
     symbol = Symbol.parse(symbol_str)
     timeframe = Timeframe(timeframe_str)
     start = dt.strptime(start_str, "%Y-%m-%d")
@@ -171,7 +171,7 @@ async def run_walk_forward_service(
     from ..core.types.symbols import Symbol
     from ..data.adapters.registry import AdapterRegistry
 
-    algorithm = AlgorithmRegistry.get(algo_id)
+    algorithm = AlgorithmRegistry.get(algo_id, tenant_id=_tenant_id())
     symbol = Symbol.parse(symbol_str)
     timeframe = Timeframe(timeframe_str)
     start = dt.strptime(start_str, "%Y-%m-%d")
@@ -542,6 +542,7 @@ async def run_portfolio_backtest_service(
         end=dt.strptime(end_str, "%Y-%m-%d"),
         total_capital=total_capital,
         venue=venue,
+        tenant_id=_tenant_id(),
         algo_params=algo_params,
     )
 

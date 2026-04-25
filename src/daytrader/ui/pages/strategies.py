@@ -28,8 +28,12 @@ async def strategies_page() -> None:
         save_strategy_config,
     )
 
-    algo_ids = AlgorithmRegistry.available()
-    algo_labels = {aid: AlgorithmRegistry.get(aid).manifest.name for aid in algo_ids}
+    from ...auth.session import current_tenant_id
+    _tid = current_tenant_id()
+    algo_ids = AlgorithmRegistry.available(tenant_id=_tid)
+    algo_labels = {
+        aid: AlgorithmRegistry.get(aid, tenant_id=_tid).manifest.name for aid in algo_ids
+    }
 
     ui.label("Strategy Library").classes("text-h5 q-pb-xs")
     ui.label(

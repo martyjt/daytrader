@@ -148,9 +148,10 @@ class TradingLoop:
         if not algo_id or not symbol_str:
             return  # Persona not configured for live trading
 
-        # Resolve algorithm
+        # Resolve algorithm — tenant overlay first so a tenant's sandboxed
+        # plugin can be used in their own personas.
         try:
-            algorithm = AlgorithmRegistry.get(algo_id)
+            algorithm = AlgorithmRegistry.get(algo_id, tenant_id=persona.tenant_id)
         except KeyError:
             logger.warning("Algorithm %s not found for persona %s", algo_id, persona.name)
             return
@@ -241,8 +242,10 @@ class TradingLoop:
             ),
         )
 
-        # Run algorithm
-        algorithm.on_bar(ctx)
+        # Run algorithm. ``on_bar_async`` is the trading-loop contract: built-in
+        # algorithms forward to their sync ``on_bar`` (zero overhead), while
+        # sandboxed plugins do the actual work inside a subprocess.
+        await algorithm.on_bar_async(ctx)
 
         if not emitted:
             return

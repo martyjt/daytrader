@@ -35,13 +35,18 @@ async def bandit_builder_page() -> None:
         return
 
     from ...algorithms.registry import AlgorithmRegistry
+    from ...algorithms.sandbox import SandboxedAlgorithm
 
+    # Bandit composition with sandboxed plugins is deferred (deepcopy of a
+    # subprocess-backed adapter is not supported in Phase 6). Filter them
+    # out of the picker; only built-ins / in-process algorithms compose.
     algo_ids = AlgorithmRegistry.available()
     # Don't allow a bandit to wrap itself or another bandit (keep it shallow).
     pickable = {
         aid: AlgorithmRegistry.get(aid).manifest.name
         for aid in algo_ids
         if not aid.startswith("bandit")
+        and not isinstance(AlgorithmRegistry.get(aid), SandboxedAlgorithm)
     }
 
     ui.label("Bandit Allocator Builder").classes("text-h5 q-pb-sm")

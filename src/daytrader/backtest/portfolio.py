@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 import numpy as np
 
@@ -76,10 +77,13 @@ async def run_portfolio_backtest(
     total_capital: float = 10_000.0,
     venue: str = "binance_spot",
     algo_params: dict[str, Any] | None = None,
+    tenant_id: UUID | None = None,
 ) -> PortfolioBacktestResult:
     """Backtest ``algo_id`` on each symbol with equal 1/N capital allocation.
 
-    Returns aggregate + per-symbol results.
+    ``tenant_id`` is required to resolve a tenant's sandboxed plugin.
+    Built-in algorithms are reachable without it. Returns aggregate +
+    per-symbol results.
     """
     from ..algorithms.registry import AlgorithmRegistry
     from ..backtest.engine import BacktestEngine
@@ -92,7 +96,7 @@ async def run_portfolio_backtest(
 
     timeframe = Timeframe(timeframe_str)
     per_symbol_capital = total_capital / len(symbols)
-    algorithm = AlgorithmRegistry.get(algo_id)
+    algorithm = AlgorithmRegistry.get(algo_id, tenant_id=tenant_id)
     engine = BacktestEngine()
 
     results: list[PortfolioSymbolResult] = []

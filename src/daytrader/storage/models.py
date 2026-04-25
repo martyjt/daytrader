@@ -389,3 +389,38 @@ class BrokerCredentialModel(TenantMixin, Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class TenantPluginModel(TenantMixin, Base):
+    """A tenant-uploaded algorithm plugin (Phase 6).
+
+    The on-disk file at ``plugins/uploads/<tenant_id>/<filename>`` is the
+    artifact; this row is the durable index of what's installed for the
+    tenant, who installed it, and whether it's currently usable. Disabled
+    plugins still have a row but don't get registered into the per-tenant
+    algorithm overlay.
+    """
+
+    __tablename__ = "tenant_plugins"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    algorithm_id: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(255))
+    filename: Mapped[str] = mapped_column(String(255))
+    sha256: Mapped[str] = mapped_column(String(64))
+    # Cached AlgorithmManifest as JSON. Lets startup build SandboxedAlgorithm
+    # adapters without paying a worker spawn — workers stay lazy until first
+    # on_bar_async call.
+    manifest_json: Mapped[str] = mapped_column(Text)
+    warmup_bars: Mapped[int] = mapped_column(Integer, default=0)
+    uploaded_by: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id"), default=None
+    )
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

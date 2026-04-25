@@ -84,6 +84,15 @@ class Algorithm(ABC):
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
         """Process one bar. Return ``ctx.emit(...)`` or ``None``."""
 
+    async def on_bar_async(self, ctx: AlgorithmContext) -> Signal | None:
+        """Async variant — defaults to forwarding to ``on_bar``.
+
+        The trading loop awaits this method so subprocess-backed algorithms
+        (``SandboxedAlgorithm``) can override with real async work without
+        touching the synchronous fast path that built-in algos depend on.
+        """
+        return self.on_bar(ctx)
+
     def warmup_bars(self) -> int:
         """Minimum history bars needed before the algorithm can emit.
 

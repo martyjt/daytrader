@@ -886,8 +886,18 @@ async def dag_composer_page() -> None:
                 _add_algorithm(e.value)
                 algo_select.set_value(None)
 
+        # DAG composition with sandboxed plugins is deferred to a future
+        # phase (deepcopy semantics for subprocess-backed adapters need
+        # design work). Show only algorithms that are safe to compose:
+        # built-ins and any other plain in-process algorithms.
+        from ...algorithms.sandbox import SandboxedAlgorithm
+
+        _composable_ids = [
+            aid for aid in AlgorithmRegistry.available()
+            if not isinstance(AlgorithmRegistry.get(aid), SandboxedAlgorithm)
+        ]
         algo_select = ui.select(
-            AlgorithmRegistry.available(),
+            _composable_ids,
             label="Add Algorithm",
             on_change=_on_algo_select,
         ).classes("w-48")

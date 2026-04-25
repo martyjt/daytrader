@@ -1,37 +1,97 @@
-"""Algorithm registry — discover and retrieve algorithms by id."""
+"""Algorithm registry — discover and retrieve algorithms by id.
+
+Two layers:
+
+* The **global** layer holds built-in algorithms; every tenant sees the
+  same instances. ``register`` / ``get`` without a ``tenant_id`` operate
+  here.
+
+* A **per-tenant overlay** holds sandboxed plugins uploaded by a
+  particular tenant's owner. ``get(algo_id, tenant_id=…)`` checks the
+  overlay first, falls back to the global layer. Tenant A's plugins
+  are invisible to tenant B by construction — there is no path that
+  joins the two without an explicit ``tenant_id`` argument.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 
 from .base import Algorithm
 
 
 class AlgorithmRegistry:
-    """Registry of available algorithms (built-in + plugins)."""
+    """Registry of available algorithms (built-in + tenant plugins)."""
 
     _algorithms: dict[str, Algorithm] = {}
+    _per_tenant: dict[UUID, dict[str, Algorithm]] = {}
+
+    # ---- global layer (built-ins) ---------------------------------------
 
     @classmethod
     def register(cls, algo: Algorithm) -> None:
         cls._algorithms[algo.manifest.id] = algo
 
     @classmethod
-    def get(cls, algo_id: str) -> Algorithm:
+    def get(cls, algo_id: str, tenant_id: UUID | None = None) -> Algorithm:
+        if tenant_id is not None:
+            overlay = cls._per_tenant.get(tenant_id)
+            if overlay is not None and algo_id in overlay:
+                return overlay[algo_id]
         if algo_id not in cls._algorithms:
+            available = sorted(cls._algorithms)
+            if tenant_id is not None and cls._per_tenant.get(tenant_id):
+                available = sorted(set(available) | set(cls._per_tenant[tenant_id]))
             raise KeyError(
-                f"Algorithm {algo_id!r} not registered. "
-                f"Available: {sorted(cls._algorithms)}"
+                f"Algorithm {algo_id!r} not registered. Available: {available}"
             )
         return cls._algorithms[algo_id]
 
     @classmethod
-    def available(cls) -> list[str]:
-        return sorted(cls._algorithms)
+    def available(cls, tenant_id: UUID | None = None) -> list[str]:
+        ids = set(cls._algorithms)
+        if tenant_id is not None:
+            ids |= set(cls._per_tenant.get(tenant_id, {}))
+        return sorted(ids)
 
     @classmethod
-    def all(cls) -> dict[str, Algorithm]:
-        return dict(cls._algorithms)
+    def all(cls, tenant_id: UUID | None = None) -> dict[str, Algorithm]:
+        merged: dict[str, Algorithm] = dict(cls._algorithms)
+        if tenant_id is not None:
+            # Tenant overlay wins on collision — but we don't allow tenants
+            # to shadow built-in ids in the installer, so collisions should
+            # not happen in practice.
+            merged.update(cls._per_tenant.get(tenant_id, {}))
+        return merged
+
+    # ---- per-tenant overlay --------------------------------------------
+
+    @classmethod
+    def register_for_tenant(cls, tenant_id: UUID, algo: Algorithm) -> None:
+        """Add an algorithm to a tenant's overlay. Replaces any existing entry."""
+        cls._per_tenant.setdefault(tenant_id, {})[algo.manifest.id] = algo
+
+    @classmethod
+    def unregister_for_tenant(cls, tenant_id: UUID, algo_id: str) -> bool:
+        """Remove an entry from a tenant's overlay. Returns True if removed."""
+        overlay = cls._per_tenant.get(tenant_id)
+        if not overlay or algo_id not in overlay:
+            return False
+        del overlay[algo_id]
+        if not overlay:
+            cls._per_tenant.pop(tenant_id, None)
+        return True
+
+    @classmethod
+    def clear_tenant(cls, tenant_id: UUID) -> None:
+        """Drop all overlay entries for a tenant (used on tenant teardown)."""
+        cls._per_tenant.pop(tenant_id, None)
+
+    @classmethod
+    def tenant_overlay(cls, tenant_id: UUID) -> dict[str, Algorithm]:
+        """Return a copy of just the tenant's overlay, no built-ins."""
+        return dict(cls._per_tenant.get(tenant_id, {}))
 
     @classmethod
     def auto_register(cls) -> None:
@@ -187,3 +247,4 @@ class AlgorithmRegistry:
     @classmethod
     def clear(cls) -> None:
         cls._algorithms.clear()
+        cls._per_tenant.clear()
