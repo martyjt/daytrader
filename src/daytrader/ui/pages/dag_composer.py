@@ -15,6 +15,7 @@ from nicegui import app, ui
 
 from pathlib import Path
 
+from ..components.dag_render import DagRenderNode, dag_to_mermaid
 from ..shell import page_layout
 from ...algorithms.dag.combinators import COMBINATORS
 from ...algorithms.dag.composite import CompositeAlgorithm
@@ -428,6 +429,7 @@ async def dag_composer_page() -> None:
         _sync_status["edges"] = len(_state["edges"])
         _sync_status["error"] = None
         _refresh_sync_label()
+        _refresh_diagram()
         return True
 
     def _refresh_sync_label() -> None:
@@ -757,6 +759,7 @@ async def dag_composer_page() -> None:
                         f"{label} ({n['node_id']})",
                         on_click=lambda nid=n["node_id"]: _select_node(nid),
                     ).props("flat dense no-caps").classes("text-xs")
+        _refresh_diagram()
 
     def _select_node(node_id: str) -> None:
         _state["selected"] = node_id
@@ -957,6 +960,40 @@ async def dag_composer_page() -> None:
         ):
             ui.label("PROPERTIES").classes("text-overline text-grey-7")
             props_container = ui.column().classes("gap-2 w-full")
+
+    # Diagram preview — same Mermaid renderer the Charts Workbench uses,
+    # so the user can see the structure of the DAG they're wiring without
+    # leaving the composer. Refreshed on every state mutation and on each
+    # auto-sync tick (covers drag-and-drop connections).
+    with ui.expansion("Diagram preview", icon="account_tree", value=True).classes(
+        "w-full"
+    ).style("background-color: #1a1b2e; border-top: 1px solid #333"):
+        with ui.card().classes("w-full"):
+            mermaid_widget = ui.mermaid("flowchart LR").classes("w-full")
+
+    def _refresh_diagram() -> None:
+        """Rebuild the Mermaid diagram from the current builder state."""
+        render_nodes: list[DagRenderNode] = []
+        for n in _state["nodes"]:
+            if n["node_type"] == "algorithm":
+                aid = n.get("algorithm_id") or "?"
+                try:
+                    label = AlgorithmRegistry.get(aid).manifest.name
+                except KeyError:
+                    label = aid
+            else:
+                label = n.get("combinator_type") or "?"
+            parents = [
+                e["source_id"] for e in _state["edges"]
+                if e["target_id"] == n["node_id"]
+            ]
+            render_nodes.append(DagRenderNode(
+                node_id=n["node_id"],
+                node_type=n["node_type"],
+                label=label,
+                parents=parents,
+            ))
+        mermaid_widget.set_content(dag_to_mermaid(render_nodes))
 
     # Initialize canvas after DOM is ready
     ui.timer(0.5, lambda: ui.run_javascript('dtInitCanvas("dag-canvas-container")'), once=True)

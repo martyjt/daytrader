@@ -23,6 +23,7 @@ from typing import Any
 
 from nicegui import ui
 
+from ..components.dag_render import DagRenderNode, dag_to_mermaid
 from ..shell import page_layout
 
 
@@ -189,8 +190,17 @@ def _render_dag_compositions(result) -> None:
     for algo in dag_runs:
         with ui.card().classes("w-full q-mb-sm"):
             ui.label(algo.algo_name).classes("text-subtitle2 q-pb-xs")
-            diagram = _dag_to_mermaid(algo)
-            ui.mermaid(diagram).classes("w-full")
+            render_nodes = [
+                DagRenderNode(
+                    node_id=n.node_id,
+                    node_type=n.node_type,
+                    label=n.label,
+                    parents=list(n.parents),
+                    latest_score=n.latest_score,
+                )
+                for n in algo.dag_nodes
+            ]
+            ui.mermaid(dag_to_mermaid(render_nodes)).classes("w-full")
 
             # Companion table below the diagram with the same data in tabular form.
             cols = [
@@ -216,40 +226,6 @@ def _render_dag_compositions(result) -> None:
                 "domLayout": "autoHeight",
                 "defaultColDef": {"resizable": True},
             }).classes("w-full q-pt-xs")
-
-
-def _dag_to_mermaid(algo) -> str:
-    """Render a DAG as a Mermaid `flowchart LR` with per-node color coding."""
-    lines: list[str] = ["flowchart LR"]
-    # Node definitions with color classes
-    for n in algo.dag_nodes:
-        score = n.latest_score
-        if score is None:
-            cls = "flat"
-            score_txt = "—"
-        elif score > 0.05:
-            cls = "long"
-            score_txt = f"+{score:.2f}"
-        elif score < -0.05:
-            cls = "short"
-            score_txt = f"{score:.2f}"
-        else:
-            cls = "flat"
-            score_txt = f"{score:+.2f}"
-        label = n.label.replace('"', "'").replace("\n", "<br/>")
-        shape_open, shape_close = (("((", "))") if n.node_type == "combinator" else ("[", "]"))
-        lines.append(f'  {n.node_id}{shape_open}"{label}<br/><b>{score_txt}</b>"{shape_close}:::{cls}')
-
-    # Edges (parent -> this node)
-    for n in algo.dag_nodes:
-        for p in n.parents:
-            lines.append(f"  {p} --> {n.node_id}")
-
-    # Class definitions (Mermaid styling)
-    lines.append("  classDef long fill:#1d4024,stroke:#40c057,color:#e8f5e9;")
-    lines.append("  classDef short fill:#4a1818,stroke:#fa5252,color:#fdecea;")
-    lines.append("  classDef flat fill:#2a2b3a,stroke:#868e96,color:#e4e4e4;")
-    return "\n".join(lines)
 
 
 def _render_agreement_legend(result) -> None:
