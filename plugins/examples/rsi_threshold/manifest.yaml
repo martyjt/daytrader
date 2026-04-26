@@ -1,0 +1,28 @@
+id: example_rsi_threshold
+name: "Example — RSI Threshold"
+version: 0.1.0
+author: Daytrader examples
+description: "Bull when RSI(period) crosses below oversold; bear when above overbought."
+asset_classes: [crypto, equities]
+timeframes: [1h, 4h, 1d]
+suitable_regimes: [sideways]
+params:
+  - name: period
+    type: int
+    default: 14
+    min: 2
+    max: 100
+    description: "RSI lookback"
+  - name: oversold
+    type: float
+    default: 30.0
+    min: 5.0
+    max: 50.0
+    description: "Below this -> bullish signal"
+  - name: overbought
+    type: float
+    default: 70.0
+    min: 50.0
+    max: 95.0
+    description: "Above this -> bearish signal"
+dependencies: []

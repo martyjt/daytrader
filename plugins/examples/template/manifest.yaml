@@ -1,0 +1,20 @@
+id: example_template
+name: "Example — Template (fork me)"
+version: 0.1.0
+author: Your name here
+description: "Empty skeleton — copy this folder, rename, replace the body."
+asset_classes: [crypto, equities]
+timeframes: [1h, 4h, 1d]
+# Set this to a non-empty subset of {"bull", "bear", "sideways"} if your
+# strategy is regime-specific. Omit for "agnostic".
+# suitable_regimes: [bull]
+params:
+  # Add one entry per tunable knob. Available types: int, float, bool, str.
+  # The Strategy Lab auto-renders a form from this list.
+  - name: example_threshold
+    type: float
+    default: 0.5
+    min: 0.0
+    max: 1.0
+    description: "Replace me. The UI will render this as a slider."
+dependencies: []

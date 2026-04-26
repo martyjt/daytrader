@@ -9,12 +9,26 @@ from __future__ import annotations
 
 from nicegui import ui
 
+from ...auth.session import current_tenant_id
 from ..services import list_discoveries, list_personas
+from ..services_onboarding import get_onboarding_status
 from ..shell import page_layout, persona_card, stat_card
 
 
 @ui.page("/")
-async def home_page() -> None:
+async def home_page(welcome: str | None = None) -> None:
+    # Phase 13 — bounce fresh tenants to /welcome unless they explicitly
+    # asked to skip via the welcome page's "Skip for now" link. The check
+    # runs before page_layout() so the welcome page paints first instead
+    # of flashing the empty home dashboard.
+    if welcome is None:
+        tenant_id = current_tenant_id()
+        if tenant_id is not None:
+            status = await get_onboarding_status(tenant_id)
+            if status.is_fresh:
+                ui.navigate.to("/welcome")
+                return
+
     if not page_layout("What's happening today?"):
         return
 

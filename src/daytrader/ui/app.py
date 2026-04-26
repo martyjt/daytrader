@@ -104,6 +104,7 @@ async def _startup() -> None:
     # ShadowScheduler per active tenant. Each polls every 60s and spins
     # workers up or down as personas / tenants change.
     from ..core.supervisor import SupervisorManager
+    from ..digest import DailyDigestSupervisor
     from ..execution.supervisor import TradingLoopSupervisor
     from ..research.supervisor import ExplorationSupervisor, ShadowSupervisor
 
@@ -115,6 +116,7 @@ async def _startup() -> None:
         ),
         ExplorationSupervisor(),
         ShadowSupervisor(),
+        DailyDigestSupervisor(),
     ])
     await manager.start_all()
     app.state.supervisor_manager = manager
@@ -209,4 +211,5 @@ def create_app() -> None:
         strategies,
         strategy_lab,
         universes,
+        welcome,
     )

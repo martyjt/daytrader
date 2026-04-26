@@ -86,6 +86,11 @@ class AppSettings(BaseSettings):
     shadow_schedule_timeframe: str = "1d"
     shadow_schedule_lookback_days: int = 180
 
+    # Daily tenant digest (Phase 13). Posts a one-line summary of
+    # yesterday's activity to the tenant's notification webhook.
+    daily_digest_enabled: bool = True
+    daily_digest_local_time: str = "08:00"
+
 
 class YamlConfig:
     """Layered YAML defaults (read-only). Env settings override these."""

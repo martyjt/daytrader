@@ -42,5 +42,8 @@ single `on_bar(context) -> Signal | None` method. The `AlgorithmContext`
 is the sandbox: it exposes features and a signal emitter, and nothing
 else. No DB, no broker, no global state.
 
-Full contract documented in Phase 1 when the `algorithms/base.py` module
-lands.
+See [`examples/`](examples/) for three starter plugins — `buy_hold`,
+`rsi_threshold`, and a `template` skeleton designed for forking. Copy
+any of them out of `examples/` and into `plugins/` to register them on
+the next startup. The `examples/README.md` documents the full
+`AlgorithmContext` API.
