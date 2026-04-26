@@ -22,7 +22,6 @@ from daytrader.storage.models import (
 )
 from daytrader.storage.repository import TenantRepository
 
-
 TENANT_A = UUID("00000000-0000-0000-0000-000000000001")
 TENANT_B = UUID("00000000-0000-0000-0000-000000000002")
 USER_A = UUID("00000000-0000-0000-0000-0000000000aa")
@@ -147,7 +146,7 @@ async def test_record_swallows_db_errors(monkeypatch, caplog):
     @asynccontextmanager
     async def _bad_session():
         raise RuntimeError("simulated DB outage")
-        yield  # pragma: no cover
+        yield  # type: ignore[unreachable]  # pragma: no cover
 
     monkeypatch.setattr("daytrader.core.audit.get_session", _bad_session)
     monkeypatch.setattr(audit, "current_tenant_id", lambda: None)

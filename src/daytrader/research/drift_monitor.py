@@ -25,7 +25,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any
 
 import numpy as np
 
@@ -159,7 +158,7 @@ async def scan_drift(
     # Build the same baseline as the Exploration Agent so drift alerts
     # speak to what that agent actually trains on.
     agent = ExplorationAgent()
-    X_base = agent._build_baseline(closes, highs, lows, volumes)  # noqa: SLF001
+    X_base = agent._build_baseline(closes, highs, lows, volumes)
 
     feature_names = [
         "log_r1", "log_r5", "log_r20",

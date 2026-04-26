@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from nicegui import app
 
 from ..core.settings import get_settings
@@ -10,8 +12,7 @@ from ..core.settings import get_settings
 async def _startup() -> None:
     settings = get_settings()
 
-    from ..storage.database import create_tables, init_db
-    from ..storage.database import get_session
+    from ..storage.database import create_tables, get_session, init_db
     from ..storage.seed import seed_default_tenant
 
     await init_db(settings.database_url)
@@ -91,8 +92,8 @@ async def _startup() -> None:
     app.state.notifier = notifier
 
     # Initialise the journal writer, kill switch, and global risk monitor.
-    from ..journal.writer import JournalWriter
     from ..execution.kill_switch import init_kill_switch
+    from ..journal.writer import JournalWriter
     from ..risk.global_risk import GlobalRiskConfig, GlobalRiskMonitor
 
     journal = JournalWriter()
@@ -136,26 +137,20 @@ async def _shutdown() -> None:
     # Stop the regime watcher.
     watcher = getattr(app.state, "regime_watcher", None)
     if watcher:
-        try:
+        with contextlib.suppress(Exception):
             await watcher.stop()
-        except Exception:
-            pass
 
     # Stop all per-tenant supervisors (and their workers).
     manager = getattr(app.state, "supervisor_manager", None)
     if manager:
-        try:
+        with contextlib.suppress(Exception):
             await manager.stop_all()
-        except Exception:
-            pass
 
     # Shut down all plugin worker subprocesses.
     plugin_manager = getattr(app.state, "plugin_manager", None)
     if plugin_manager:
-        try:
+        with contextlib.suppress(Exception):
             await plugin_manager.shutdown_all()
-        except Exception:
-            pass
         from ..algorithms.sandbox import set_active_manager
         set_active_manager(None)
 
@@ -175,16 +170,12 @@ async def _shutdown() -> None:
     for name in ExecutionRegistry.available():
         adapter = ExecutionRegistry.get(name)
         if hasattr(adapter, "close"):
-            try:
+            with contextlib.suppress(Exception):
                 await adapter.close()
-            except Exception:
-                pass
     for adapter in ExecutionRegistry.cached_tenant_adapters().values():
         if hasattr(adapter, "close"):
-            try:
+            with contextlib.suppress(Exception):
                 await adapter.close()
-            except Exception:
-                pass
 
     from ..storage.database import close_db
 

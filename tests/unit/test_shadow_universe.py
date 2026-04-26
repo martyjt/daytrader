@@ -9,6 +9,7 @@ basket stability scoring.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -223,7 +224,7 @@ async def test_basket_stability_is_fraction_of_symbols_beating_primary(monkeypat
 @pytest.mark.asyncio
 async def test_basket_handles_all_errors_gracefully(monkeypatch):
     """If a candidate errors on every symbol, it gets a single error row."""
-    plan = {
+    plan: dict[str, list[Any]] = {
         "BTC-USD": [],
         "ETH-USD": [],
     }

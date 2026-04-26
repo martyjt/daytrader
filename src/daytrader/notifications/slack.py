@@ -49,7 +49,7 @@ class SlackNotifier(Notifier):
     ) -> None:
         try:
             url = await self._url_resolver(tenant_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "Failed to resolve webhook URL for tenant %s: %s", tenant_id, exc
             )
@@ -72,5 +72,5 @@ class SlackNotifier(Notifier):
                         response.status_code,
                         response.text[:200],
                     )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Slack webhook POST failed: %s", exc)

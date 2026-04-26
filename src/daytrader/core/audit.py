@@ -35,14 +35,14 @@ def _safe_tenant_id() -> UUID | None:
     """
     try:
         return current_tenant_id()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
 def _safe_user_id() -> UUID | None:
     try:
         return current_user_id()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -80,5 +80,5 @@ async def record(
                 )
             )
             await session.commit()
-    except Exception as exc:  # noqa: BLE001 — audit must never break callers
+    except Exception as exc:
         logger.warning("Failed to write audit row for %s: %s", action, exc)

@@ -16,10 +16,11 @@ import base64
 import io
 import json
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import IO, Any, Callable
+from typing import IO, Any
 from uuid import UUID
 
 import numpy as np
@@ -240,7 +241,7 @@ def _decode_datetime(raw: Any, field: str) -> datetime:
     except ValueError as exc:
         raise ProtocolError(f"{field} is not a valid ISO datetime: {s!r}") from exc
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 

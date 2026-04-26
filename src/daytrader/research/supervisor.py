@@ -11,7 +11,6 @@ remain global env-driven (per-tenant overrides are out of scope).
 from __future__ import annotations
 
 import logging
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select

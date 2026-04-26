@@ -13,7 +13,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from daytrader.core.context import current_tenant, tenant_scope
+from daytrader.core.context import tenant_scope
 from daytrader.storage.models import PersonaModel, TenantModel
 from daytrader.storage.repository import TenantRepository
 

@@ -1,9 +1,9 @@
 """Tests for DAG types and validation."""
 
+import pytest
+
 from daytrader.algorithms.dag.types import DAGDefinition, DAGEdge, DAGNode
 from daytrader.algorithms.dag.validation import topological_order, validate
-
-import pytest
 
 
 def _simple_dag() -> DAGDefinition:

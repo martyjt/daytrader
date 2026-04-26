@@ -21,7 +21,7 @@ from ..algorithms.base import Algorithm
 from ..core.types.bars import Timeframe
 from ..core.types.symbols import Symbol
 from .engine import BacktestEngine, BacktestResult
-from .fees import FeeModel, FeeSchedule, VENUE_PROFILES
+from .fees import VENUE_PROFILES, FeeModel, FeeSchedule
 from .risk import RiskConfig
 
 

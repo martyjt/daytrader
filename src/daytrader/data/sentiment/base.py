@@ -12,6 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, ClassVar
 
 from ..adapters.base import AdapterHealth
 
@@ -56,7 +57,7 @@ class SentimentAdapter(ABC):
 class SentimentAdapterRegistry:
     """Registry of available sentiment adapters."""
 
-    _adapters: dict[str, SentimentAdapter] = {}
+    _adapters: ClassVar[dict[str, SentimentAdapter]] = {}
 
     @classmethod
     def register(cls, adapter: SentimentAdapter) -> None:
@@ -102,7 +103,9 @@ def score_text_vader(text: str) -> float | None:
     return unscored events and callers can run a model of their choice.
     """
     try:
-        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer  # type: ignore
+        from vaderSentiment.vaderSentiment import (  # noqa: F401
+            SentimentIntensityAnalyzer,
+        )
     except ImportError:
         return None
     analyzer = _get_vader()
@@ -112,16 +115,16 @@ def score_text_vader(text: str) -> float | None:
     return float(score.get("compound", 0.0))
 
 
-_vader_instance = None
+_vader_instance: Any = None
 
 
-def _get_vader():  # noqa: ANN202
+def _get_vader() -> Any:
     """Lazy-singleton VADER analyzer (initialization is non-trivial)."""
-    global _vader_instance  # noqa: PLW0603
+    global _vader_instance
     if _vader_instance is not None:
         return _vader_instance
     try:
-        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer  # type: ignore
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
         _vader_instance = SentimentIntensityAnalyzer()
         return _vader_instance

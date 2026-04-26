@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import ema
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
 from ...core.types.visualize import (
@@ -23,6 +21,8 @@ from ...core.types.visualize import (
     VisualizeContext,
     nan_array_to_jsonable,
 )
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import ema
 
 
 class EMACrossoverAlgorithm(Algorithm):

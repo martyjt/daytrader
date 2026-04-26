@@ -225,5 +225,5 @@ class AlphaVantageAdapter(DataAdapter):
                 latency_ms=round(elapsed, 1),
                 last_successful_call=utcnow(),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return AdapterHealth(status="down", error=str(exc))

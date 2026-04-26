@@ -19,7 +19,7 @@ last bar.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import polars as pl
@@ -29,13 +29,12 @@ try:  # Lazy / optional — gymnasium may not be installed.
     from gymnasium import spaces
     _GYM_AVAILABLE = True
 except ImportError:
-    gym = None  # type: ignore
-    spaces = None  # type: ignore
+    gym = None
+    spaces = None
     _GYM_AVAILABLE = False
 
 from ..builtin.torch_base import build_dl_feature_matrix
 from .reward_shapers import RewardContext, RewardShaper, get_shaper
-
 
 _DEFAULT_WINDOW = 20
 _DEFAULT_FEATURE_DIM = 13  # matches build_dl_feature_matrix
@@ -54,7 +53,7 @@ if _GYM_AVAILABLE:
     class BacktestTradingEnv(gym.Env):
         """OHLCV → gym env. See module docstring for design."""
 
-        metadata = {"render_modes": []}
+        metadata: ClassVar[dict[str, Any]] = {"render_modes": []}
 
         def __init__(
             self,
@@ -124,8 +123,8 @@ if _GYM_AVAILABLE:
             self._position = 0.0
             self._equity = self._initial_capital
             self._peak_equity = self._initial_capital
-            if hasattr(self._shaper, "reset") and callable(self._shaper.reset):  # type: ignore[attr-defined]
-                self._shaper.reset()  # type: ignore[attr-defined]
+            if hasattr(self._shaper, "reset") and callable(self._shaper.reset):
+                self._shaper.reset()
             return self._observation(), {}
 
         def step(

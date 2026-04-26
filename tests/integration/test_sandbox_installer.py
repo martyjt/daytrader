@@ -25,7 +25,6 @@ from daytrader.algorithms.sandbox.installer import (
 )
 from daytrader.storage.models import TenantModel, UserModel
 
-
 TENANT_A = UUID("00000000-0000-0000-0000-0000000000aa")
 TENANT_B = UUID("00000000-0000-0000-0000-0000000000bb")
 USER_A = UUID("00000000-0000-0000-0000-0000000000a1")

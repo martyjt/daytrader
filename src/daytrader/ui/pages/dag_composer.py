@@ -9,20 +9,22 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import ui
 
-from pathlib import Path
-
-from ..components.dag_render import DagRenderNode, dag_to_mermaid
-from ..shell import page_layout
 from ...algorithms.dag.combinators import COMBINATORS
 from ...algorithms.dag.composite import CompositeAlgorithm
-from ...algorithms.dag.serialization import dag_from_yaml, dag_to_yaml, save_dag, load_dag
+from ...algorithms.dag.serialization import dag_from_yaml, dag_to_yaml, load_dag, save_dag
 from ...algorithms.dag.types import DAGDefinition, DAGEdge, DAGNode
 from ...algorithms.dag.validation import validate
 from ...algorithms.registry import AlgorithmRegistry
+from ..components.dag_render import DagRenderNode, dag_to_mermaid
+from ..shell import page_layout
+
+# Module-level task pin so fire-and-forget asyncio tasks aren't GC'd.
+_bg_tasks: set[asyncio.Task[Any]] = set()
 
 _DAGS_DIR = Path(__file__).resolve().parents[4] / "data" / "dags"
 
@@ -701,7 +703,9 @@ async def dag_composer_page() -> None:
             await asyncio.sleep(1.5)
             _sync_status["paused"] = False
 
-        asyncio.create_task(_resume_sync_later())
+        # Hold the task in module-level set so it isn't GC'd mid-flight.
+        _bg_tasks.add(task := asyncio.create_task(_resume_sync_later()))
+        task.add_done_callback(_bg_tasks.discard)
 
         ui.notify(f"Loaded '{dag.name}'", type="positive")
 
@@ -756,7 +760,7 @@ async def dag_composer_page() -> None:
                 color = "blue" if ntype == "algorithm" else "purple"
                 with ui.row().classes("items-center gap-1 w-full"):
                     ui.icon(icon, size="xs", color=color)
-                    btn = ui.button(
+                    ui.button(
                         f"{label} ({n['node_id']})",
                         on_click=lambda nid=n["node_id"]: _select_node(nid),
                     ).props("flat dense no-caps").classes("text-xs")
@@ -959,7 +963,7 @@ async def dag_composer_page() -> None:
 
         # Center: LiteGraph canvas
         with ui.column().classes("flex-grow").style("overflow: hidden"):
-            canvas_container = ui.html(
+            ui.html(
                 '<div id="dag-canvas-container" style="width: 100%; height: 100%; position: relative">'
                 '<canvas style="width: 100%; height: 100%"></canvas>'
                 '</div>'
@@ -978,9 +982,8 @@ async def dag_composer_page() -> None:
     # auto-sync tick (covers drag-and-drop connections).
     with ui.expansion("Diagram preview", icon="account_tree", value=True).classes(
         "w-full"
-    ).style("background-color: #1a1b2e; border-top: 1px solid #333"):
-        with ui.card().classes("w-full"):
-            mermaid_widget = ui.mermaid("flowchart LR").classes("w-full")
+    ).style("background-color: #1a1b2e; border-top: 1px solid #333"), ui.card().classes("w-full"):
+        mermaid_widget = ui.mermaid("flowchart LR").classes("w-full")
 
     def _refresh_diagram() -> None:
         """Rebuild the Mermaid diagram from the current builder state."""

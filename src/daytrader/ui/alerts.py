@@ -20,7 +20,6 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-
 AlertLevel = Literal["info", "warning", "critical"]
 
 
@@ -40,7 +39,7 @@ class Alert:
 class AlertCenter:
     """Process-global ring buffer of alerts + per-client read state."""
 
-    _instance: "AlertCenter | None" = None
+    _instance: AlertCenter | None = None
     _lock = asyncio.Lock()
 
     def __init__(self, capacity: int = 100) -> None:
@@ -50,7 +49,7 @@ class AlertCenter:
         self._subscribers: list[asyncio.Event] = []
 
     @classmethod
-    def instance(cls) -> "AlertCenter":
+    def instance(cls) -> AlertCenter:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance

@@ -42,7 +42,7 @@ class NewsAPIAdapter(SentimentAdapter):
         *,
         limit: int = 100,
     ) -> list[NewsEvent]:
-        params = {
+        params: dict[str, str | int] = {
             "q": query,
             "from": start.strftime("%Y-%m-%dT%H:%M:%S"),
             "to": end.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -87,7 +87,7 @@ class NewsAPIAdapter(SentimentAdapter):
     async def health(self) -> AdapterHealth:
         try:
             t0 = time.monotonic()
-            params = {
+            params: dict[str, str | int] = {
                 "q": "market",
                 "pageSize": 1,
                 "language": "en",
@@ -102,5 +102,5 @@ class NewsAPIAdapter(SentimentAdapter):
                 latency_ms=round(elapsed, 1),
                 last_successful_call=utcnow(),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return AdapterHealth(status="down", error=str(exc))

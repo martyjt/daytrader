@@ -24,7 +24,6 @@ from nicegui import ui
 
 from ..shell import page_layout
 
-
 _BANDITS_DIR = Path(__file__).resolve().parents[4] / "data" / "bandits"
 _VALID_ID = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
@@ -114,13 +113,15 @@ async def bandit_builder_page() -> None:
             return
 
         try:
+            from ...algorithms.registry import AlgorithmRegistry
             from ...algorithms.rl.bandit_serialization import (
                 BanditConfig,
-                build_bandit_from_config,
-                save_bandit as _save_bandit,
                 _install_named_bandit,
+                build_bandit_from_config,
             )
-            from ...algorithms.registry import AlgorithmRegistry
+            from ...algorithms.rl.bandit_serialization import (
+                save_bandit as _save_bandit,
+            )
 
             config = BanditConfig(
                 id=cid,
@@ -137,11 +138,11 @@ async def bandit_builder_page() -> None:
             algo_id = f"bandit:{cid}"
             if algo_id in AlgorithmRegistry.available():
                 # Replace by deleting and re-registering.
-                AlgorithmRegistry._algorithms.pop(algo_id, None)  # noqa: SLF001
+                AlgorithmRegistry._algorithms.pop(algo_id, None)
             algo = build_bandit_from_config(config)
             if algo is not None:
                 _install_named_bandit(algo, config)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             with status:
                 ui.icon("error", color="negative")
                 ui.label(f"Save failed: {exc}").classes("text-negative")
@@ -175,7 +176,7 @@ async def bandit_builder_page() -> None:
                         "lr": f"{cfg.learning_rate:.2f}",
                         "decay": f"{cfg.decay:.2f}",
                     })
-                except Exception:  # noqa: BLE001
+                except Exception:
                     continue
             if not rows:
                 ui.label("None yet.").classes("text-caption text-grey-6")

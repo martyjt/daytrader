@@ -23,6 +23,7 @@ one of {response frame, timeout, crash} happens.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import struct
@@ -45,7 +46,7 @@ def _platform_spawn_kwargs() -> dict[str, Any]:
         if hasattr(subprocess, "CREATE_NO_WINDOW"):
             flags |= subprocess.CREATE_NO_WINDOW
         return {"creationflags": flags}
-    return {"start_new_session": True}
+    return {"start_new_session": True}  # type: ignore[unreachable]
 
 
 # Environment passed to the worker. Anything secret-shaped is stripped.
@@ -226,24 +227,18 @@ class PluginWorkerHandle:
         self._proc = None
         self._dead = True
         if proc.returncode is None:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 proc.terminate()
-            except ProcessLookupError:
-                pass
             try:
                 await asyncio.wait_for(proc.wait(), timeout=timeout)
-            except asyncio.TimeoutError:
-                try:
+            except TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
                     proc.kill()
-                except ProcessLookupError:
-                    pass
                 await proc.wait()
         if self._stderr_drainer is not None:
             self._stderr_drainer.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._stderr_drainer
-            except (asyncio.CancelledError, Exception):
-                pass
             self._stderr_drainer = None
         logger.info("Stopped plugin worker for tenant %s", self.tenant_id)
 
@@ -295,7 +290,7 @@ class PluginWorkerHandle:
                 response = await asyncio.wait_for(
                     _read_frame_async(self._proc.stdout), timeout=timeout
                 )
-            except asyncio.TimeoutError as exc:
+            except TimeoutError as exc:
                 # Kill the worker — we can't trust its state after a hang.
                 await self._terminate_now()
                 raise PluginWorkerTimeout(
@@ -332,7 +327,7 @@ class PluginWorkerHandle:
             proc.terminate()
             try:
                 await asyncio.wait_for(proc.wait(), timeout=TERMINATE_GRACE)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 await proc.wait()
         except ProcessLookupError:

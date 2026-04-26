@@ -20,8 +20,6 @@ Public surface:
 
 from .base import Notifier
 from .noop import NoopNotifier
-from .slack import SlackNotifier
-from .throttle import ThrottledNotifier
 from .service import (
     WebhookError,
     clear_webhook_url,
@@ -30,13 +28,15 @@ from .service import (
     notify_active,
     resolve_webhook_url,
     save_webhook_url,
-    set_active_notifier,
     send_test_message,
+    set_active_notifier,
 )
+from .slack import SlackNotifier
+from .throttle import ThrottledNotifier
 
 __all__ = [
-    "Notifier",
     "NoopNotifier",
+    "Notifier",
     "SlackNotifier",
     "ThrottledNotifier",
     "WebhookError",
@@ -46,6 +46,6 @@ __all__ = [
     "notify_active",
     "resolve_webhook_url",
     "save_webhook_url",
+    "send_test_message",
     "set_active_notifier",
-    "test_webhook",
 ]

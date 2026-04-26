@@ -43,7 +43,7 @@ class FredAdapter(MacroAdapter):
         start: datetime,
         end: datetime,
     ) -> pl.DataFrame:
-        params = {
+        params: dict[str, str | int] = {
             "series_id": series_id,
             "api_key": self._api_key,
             "file_type": "json",
@@ -77,7 +77,7 @@ class FredAdapter(MacroAdapter):
         return pl.DataFrame(rows, schema=MACRO_SCHEMA)
 
     async def search(self, query: str, limit: int = 20) -> list[MacroSeries]:
-        params = {
+        params: dict[str, str | int] = {
             "search_text": query,
             "api_key": self._api_key,
             "file_type": "json",
@@ -103,7 +103,7 @@ class FredAdapter(MacroAdapter):
         # Probe with a cheap, stable series (10-Year Treasury Rate).
         try:
             t0 = time.monotonic()
-            params = {
+            params: dict[str, str | int] = {
                 "series_id": "DGS10",
                 "api_key": self._api_key,
                 "file_type": "json",
@@ -121,7 +121,7 @@ class FredAdapter(MacroAdapter):
                 latency_ms=round(elapsed, 1),
                 last_successful_call=utcnow(),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return AdapterHealth(status="down", error=str(exc))
 
 

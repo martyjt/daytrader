@@ -2,26 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import numpy as np
 import polars as pl
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from daytrader.core.context import tenant_scope
+from daytrader.core.types.bars import Timeframe
 from daytrader.execution.loop import TradingLoop, _timeframe_to_days
 from daytrader.execution.paper import PaperExecutor
 from daytrader.execution.registry import ExecutionRegistry
 from daytrader.storage.models import PersonaModel, StrategyConfigModel, TenantModel
 from daytrader.storage.repository import TenantRepository
-from daytrader.core.types.bars import Timeframe
-
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -35,7 +33,7 @@ def _rising_ohlcv(n: int = 50) -> pl.DataFrame:
     """Generate a simple rising OHLCV DataFrame."""
     base = 100.0
     timestamps = [
-        datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i)
+        datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i)
         for i in range(n)
     ]
     closes = [base + i * 0.5 for i in range(n)]
@@ -224,10 +222,6 @@ async def test_global_risk_breach_triggers_kill_switch(session, _patch_session):
     # Kill switch should have been activated due to drawdown breach
     mock_ks.activate.assert_called_once()
     assert "global_drawdown" in mock_ks.activate.call_args[1]["reason"]
-
-
-# Need asyncio for the kill_switch test
-import asyncio
 
 
 # ---------------------------------------------------------------------------

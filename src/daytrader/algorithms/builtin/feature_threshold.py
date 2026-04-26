@@ -28,9 +28,9 @@ Params:
 
 from __future__ import annotations
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 
 
 class FeatureThresholdAlgorithm(Algorithm):

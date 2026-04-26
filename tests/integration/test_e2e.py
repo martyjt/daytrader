@@ -11,7 +11,6 @@ from decimal import Decimal
 from uuid import uuid4
 
 import polars as pl
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -99,7 +98,7 @@ async def test_full_ritual_flow(session, tenant_id):
 
     # 5. Promote to paper — update mode and equity
     with tenant_scope(tenant_id):
-        promoted = await repo.update(
+        await repo.update(
             persona_id,
             mode="paper",
             current_equity=Decimal(str(round(result.final_equity, 2))),
@@ -153,7 +152,7 @@ async def test_multiple_personas_isolated(session, tenant_id):
     repo = TenantRepository(session, PersonaModel)
 
     with tenant_scope(tenant_id):
-        p1 = await repo.create(
+        await repo.create(
             name="Bot A",
             mode="paper",
             asset_class="crypto",
@@ -162,7 +161,7 @@ async def test_multiple_personas_isolated(session, tenant_id):
             current_equity=Decimal("5000"),
             risk_profile="conservative",
         )
-        p2 = await repo.create(
+        await repo.create(
             name="Bot B",
             mode="backtest",
             asset_class="equities",

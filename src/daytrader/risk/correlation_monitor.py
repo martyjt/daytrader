@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any
 from uuid import UUID
 
 import numpy as np
@@ -92,7 +91,7 @@ def _bucketize_scores(
     """
     total = max(1, int((end - start).total_seconds() // bucket_seconds))
     buckets: list[list[float]] = [[] for _ in range(total)]
-    for ts, score in zip(timestamps, scores):
+    for ts, score in zip(timestamps, scores, strict=False):
         if ts < start or ts >= end:
             continue
         idx = int((ts - start).total_seconds() // bucket_seconds)

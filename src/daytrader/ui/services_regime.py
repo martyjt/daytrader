@@ -20,8 +20,6 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any
-
 
 _CACHE_TTL_SECONDS = 300.0  # 5 minutes
 
@@ -88,9 +86,10 @@ async def _compute_regime(
     symbol_str: str, timeframe_str: str, lookback_days: int,
 ) -> RegimeSnapshot:
     try:
-        from ..algorithms.builtin.regime_hmm import _build_hmm_features
         from hmmlearn.hmm import GaussianHMM
         from sklearn.preprocessing import StandardScaler
+
+        from ..algorithms.builtin.regime_hmm import _build_hmm_features
     except ImportError as exc:
         return RegimeSnapshot(
             status="unavailable",
@@ -129,7 +128,7 @@ async def _compute_regime(
     try:
         adapter = AdapterRegistry.get(adapter_name)
         df = await _fetch_ohlcv_cached(adapter, symbol, timeframe, start, end)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return RegimeSnapshot(
             status="unavailable",
             message=f"Data fetch failed: {exc}",
@@ -188,12 +187,12 @@ async def _compute_regime(
         label_probs = {
             labels[i]: float(probs[i]) for i in range(len(probs))
         }
-        top_regime = max(label_probs, key=label_probs.get)
+        top_regime = max(label_probs, key=lambda k: label_probs[k])
         return top_regime, label_probs
 
     try:
         top_regime, label_probs = await asyncio.to_thread(_fit_and_predict)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return RegimeSnapshot(
             status="unavailable",
             message=f"HMM fit failed: {exc}",
@@ -220,7 +219,7 @@ async def _compute_regime(
             try:
                 from .alerts import alerts as _alerts
 
-                top_pct = int(round(label_probs.get(top_regime, 0.0) * 100))
+                top_pct = round(label_probs.get(top_regime, 0.0) * 100)
                 _alerts().add(
                     level="warning" if top_regime == "bear" else "info",
                     title=f"Regime change: {prev.upper()} → {top_regime.upper()}",

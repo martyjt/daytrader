@@ -7,7 +7,7 @@ interface. The rest of the system never touches vendor-specific code.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 import polars as pl

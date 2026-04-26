@@ -21,7 +21,6 @@ from ...storage.models import AuditLogModel, TenantModel, UserModel
 from ..middleware import ensure_role
 from ..shell import page_layout
 
-
 _PAGE_LIMIT = 100
 
 
@@ -49,9 +48,9 @@ async def admin_audit_page() -> None:
     tenants = await _load_tenants()
     actions, resource_types = await _load_filter_options()
 
-    tenant_options = {None: "All tenants", **{t["id"]: t["name"] for t in tenants}}
-    action_options = {None: "All actions", **{a: a for a in actions}}
-    rt_options = {None: "All resource types", **{r: r for r in resource_types}}
+    tenant_options: dict[Any, str] = {None: "All tenants", **{t["id"]: t["name"] for t in tenants}}
+    action_options: dict[str | None, str] = {None: "All actions", **{a: a for a in actions}}
+    rt_options: dict[str | None, str] = {None: "All resource types", **{r: r for r in resource_types}}
 
     table_container = ui.column().classes("w-full")
 
@@ -156,7 +155,7 @@ async def _load_filter_options() -> tuple[list[str], list[str]]:
                 .order_by(AuditLogModel.resource_type)
             )
         ).scalars().all()
-    return list(actions), list(rts)
+    return list(actions), [r for r in rts if r is not None]
 
 
 async def _load_events(
@@ -210,7 +209,7 @@ async def _load_events(
 def _fmt_ts(ts: Any) -> str:
     try:
         return ts.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:  # noqa: BLE001
+    except Exception:
         return str(ts)
 
 
@@ -230,7 +229,10 @@ def _fmt_extra(extra: dict[str, Any] | str | None) -> str:
     if isinstance(extra, str):
         # Some adapters may surface raw JSON strings
         try:
-            extra = json.loads(extra)
+            parsed = json.loads(extra)
         except ValueError:
             return extra
+        if not isinstance(parsed, dict):
+            return str(parsed)
+        extra = parsed
     return ", ".join(f"{k}={v}" for k, v in sorted(extra.items()))

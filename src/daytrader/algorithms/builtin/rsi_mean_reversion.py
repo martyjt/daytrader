@@ -16,8 +16,6 @@ underperform during strong trends.
 
 from __future__ import annotations
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import rsi as compute_rsi
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
 from ...core.types.visualize import (
@@ -25,6 +23,8 @@ from ...core.types.visualize import (
     VisualizeContext,
     nan_array_to_jsonable,
 )
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import rsi as compute_rsi
 
 
 class RSIMeanReversionAlgorithm(Algorithm):

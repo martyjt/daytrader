@@ -16,6 +16,7 @@ Two layers:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 from uuid import UUID
 
 from .base import Algorithm
@@ -24,8 +25,8 @@ from .base import Algorithm
 class AlgorithmRegistry:
     """Registry of available algorithms (built-in + tenant plugins)."""
 
-    _algorithms: dict[str, Algorithm] = {}
-    _per_tenant: dict[UUID, dict[str, Algorithm]] = {}
+    _algorithms: ClassVar[dict[str, Algorithm]] = {}
+    _per_tenant: ClassVar[dict[UUID, dict[str, Algorithm]]] = {}
 
     # ---- global layer (built-ins) ---------------------------------------
 

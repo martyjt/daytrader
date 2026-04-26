@@ -16,10 +16,11 @@ These are the two isolation primitives of the whole system:
 from __future__ import annotations
 
 import contextvars
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Iterator
+from typing import Any
 from uuid import UUID
 
 import numpy as np

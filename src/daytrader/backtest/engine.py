@@ -14,8 +14,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+
+# Module-level cache for OHLCV fetches. First-time backtest hits the
+# adapter; subsequent runs with the same (symbol, timeframe, start, end)
+# read from on-disk Parquet. Cache lives at data/features/*.parquet.
+from pathlib import Path as _Path
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from ..algorithms.sandbox import SandboxedAlgorithm
 
 import numpy as np
 import polars as pl
@@ -26,14 +34,16 @@ from ..core.types.bars import Bar, Timeframe
 from ..core.types.signals import Signal
 from ..core.types.symbols import Symbol
 from ..data.features.store import FeatureStore
-from .fees import FeeModel, FeeSchedule, VENUE_PROFILES
-from .risk import RiskConfig, compute_atr, check_stop_loss, check_take_profit, stop_loss_price, take_profit_price, DailyPnLTracker
-
-
-# Module-level cache for OHLCV fetches. First-time backtest hits the
-# adapter; subsequent runs with the same (symbol, timeframe, start, end)
-# read from on-disk Parquet. Cache lives at data/features/*.parquet.
-from pathlib import Path as _Path
+from .fees import VENUE_PROFILES, FeeModel, FeeSchedule
+from .risk import (
+    DailyPnLTracker,
+    RiskConfig,
+    check_stop_loss,
+    check_take_profit,
+    compute_atr,
+    stop_loss_price,
+    take_profit_price,
+)
 
 _FEATURE_STORE = FeatureStore(
     _Path(__file__).resolve().parents[3] / "data" / "features"
@@ -197,7 +207,7 @@ class BacktestEngine:
     async def _precompute_sandbox(
         self,
         *,
-        algorithm: "SandboxedAlgorithm",
+        algorithm: SandboxedAlgorithm,
         symbol: Symbol,
         timeframe: Timeframe,
         data: pl.DataFrame,
@@ -257,7 +267,7 @@ class BacktestEngine:
                 features={},
                 params=params or {},
                 emit_fn=em.append,
-                log_fn=lambda msg, fields, _l=dl, _i=j, _ts=timestamps[j]: _l.append(
+                log_fn=lambda msg, fields, _l=dl, _i=j, _ts=timestamps[j]: _l.append(  # type: ignore[misc]
                     {"bar": _i, "timestamp": str(_ts), "message": msg, **fields}
                 ),
             ))
@@ -266,7 +276,7 @@ class BacktestEngine:
             pre_indices.append(j)
 
         await algorithm.replay_bars(pre_contexts)
-        for idx, em, dl in zip(pre_indices, pre_emitted, pre_logs):
+        for idx, em, dl in zip(pre_indices, pre_emitted, pre_logs, strict=False):
             signals[idx] = em
             logs[idx] = dl
         return signals, logs
@@ -431,28 +441,27 @@ class BacktestEngine:
             if risk_config.enabled:
                 equity = cash + position_qty * current_price
                 daily_halted = daily_tracker.update(equity, timestamps[i])
-                if daily_halted and not risk_exit:
+                if daily_halted and not risk_exit and position_qty > 0:
                     # Force-close any open position
-                    if position_qty > 0:
-                        sale = position_qty * current_price
-                        fee = fee_model.trade_cost(sale, volatility_pct=vol_pct)
-                        total_fees += fee
-                        cash = sale - fee
-                        event = {
-                            "bar": i, "timestamp": str(timestamps[i]),
-                            "type": "daily_limit",
-                        }
-                        risk_events.append(event)
-                        trades.append({
-                            "bar": i, "timestamp": str(timestamps[i]),
-                            "action": "sell", "price": current_price,
-                            "quantity": position_qty,
-                            "pnl": cash - initial_capital,
-                            "fee": round(fee, 4),
-                            "exit_reason": "daily_limit",
-                        })
-                        position_qty = 0.0
-                        risk_exit = True
+                    sale = position_qty * current_price
+                    fee = fee_model.trade_cost(sale, volatility_pct=vol_pct)
+                    total_fees += fee
+                    cash = sale - fee
+                    event = {
+                        "bar": i, "timestamp": str(timestamps[i]),
+                        "type": "daily_limit",
+                    }
+                    risk_events.append(event)
+                    trades.append({
+                        "bar": i, "timestamp": str(timestamps[i]),
+                        "action": "sell", "price": current_price,
+                        "quantity": position_qty,
+                        "pnl": cash - initial_capital,
+                        "fee": round(fee, 4),
+                        "exit_reason": "daily_limit",
+                    })
+                    position_qty = 0.0
+                    risk_exit = True
 
             # Build AlgorithmContext for this bar
             bar = Bar(
@@ -488,7 +497,7 @@ class BacktestEngine:
                     features={},
                     params=params or {},
                     emit_fn=emitted.append,
-                    log_fn=lambda msg, fields, _i=i, _ts=timestamps[i]: debug_logs.append(
+                    log_fn=lambda msg, fields, _i=i, _ts=timestamps[i]: debug_logs.append(  # type: ignore[misc]
                         {"bar": _i, "timestamp": str(_ts), "message": msg, **fields}
                     ),
                 )
@@ -646,7 +655,7 @@ def _compute_kpis(
     sells = [t for t in trades if t["action"] == "sell"]
     if sells:
         wins = sum(
-            1 for b, s in zip(buys, sells) if s["price"] > b["price"]
+            1 for b, s in zip(buys, sells, strict=False) if s["price"] > b["price"]
         )
         win_rate = wins / len(sells) * 100
     else:
@@ -655,12 +664,12 @@ def _compute_kpis(
     # Profit factor
     gains = sum(
         s["price"] - b["price"]
-        for b, s in zip(buys, sells)
+        for b, s in zip(buys, sells, strict=False)
         if s["price"] > b["price"]
     )
     losses = sum(
         b["price"] - s["price"]
-        for b, s in zip(buys, sells)
+        for b, s in zip(buys, sells, strict=False)
         if s["price"] <= b["price"]
     )
     profit_factor = gains / losses if losses > 0 else 0.0

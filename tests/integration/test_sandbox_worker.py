@@ -8,11 +8,8 @@ file with shared fixtures.
 
 from __future__ import annotations
 
-import os
-import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
@@ -20,11 +17,10 @@ import pytest
 
 from daytrader.algorithms.sandbox import (
     PluginRuntimeError,
-    PluginWorkerHandle,
     PluginWorkerManager,
     PluginWorkerTimeout,
+    protocol,
 )
-from daytrader.algorithms.sandbox import protocol
 from daytrader.core.context import AlgorithmContext
 from daytrader.core.types.bars import Bar, Timeframe
 from daytrader.core.types.symbols import AssetClass, Symbol
@@ -38,9 +34,9 @@ def _ctx(algo_id: str, tenant_id) -> AlgorithmContext:
         algorithm_id=algo_id,
         symbol=Symbol("BTC", "USDT", AssetClass.CRYPTO, "binance"),
         timeframe=Timeframe.D1,
-        now=datetime(2026, 4, 25, tzinfo=timezone.utc),
+        now=datetime(2026, 4, 25, tzinfo=UTC),
         bar=Bar(
-            timestamp=datetime(2026, 4, 25, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 25, tzinfo=UTC),
             open=Decimal("104"), high=Decimal("106"), low=Decimal("103"),
             close=Decimal("105"), volume=Decimal("1000"),
         ),

@@ -104,9 +104,8 @@ async def test_full_queue_drops_oldest():
 
 async def test_subscribe_rejects_none_tenant():
     bus = SignalBus()
-    with pytest.raises(ValueError):
-        with bus.subscribe(None):
-            pass
+    with pytest.raises(ValueError), bus.subscribe(None):
+        pass
 
 
 def test_signal_bus_is_singleton():

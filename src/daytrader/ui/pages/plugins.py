@@ -20,7 +20,7 @@ from typing import Any
 
 from nicegui import events, ui
 
-from ...algorithms.sandbox import SandboxedAlgorithm, get_active_manager
+from ...algorithms.sandbox import get_active_manager
 from ...algorithms.sandbox.installer import (
     InstallError,
     install_plugin,
@@ -31,6 +31,8 @@ from ...algorithms.sandbox.installer import (
 from ...auth.session import current_session, current_tenant_id, current_user_id
 from ..shell import page_layout
 
+# Module-level task pin so fire-and-forget asyncio tasks aren't GC'd.
+_bg_tasks: set[asyncio.Task[Any]] = set()
 
 _ALGO_ID = re.compile(r"^[a-z][a-z0-9_]{2,49}$")
 
@@ -170,7 +172,7 @@ async def plugins_page() -> None:
                             algorithm_id=p_id,
                             enabled=new_state,
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         ui.notify(f"Toggle failed: {exc}", type="negative")
                         return
                     ui.notify(
@@ -188,7 +190,7 @@ async def plugins_page() -> None:
                             tenant_id=tenant_id,
                             algorithm_id=p_id,
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         ui.notify(f"Uninstall failed: {exc}", type="negative")
                         return
                     if ok:
@@ -224,8 +226,10 @@ async def plugins_page() -> None:
         upload_status = ui.row().classes("w-full q-pt-xs")
 
         async def _handle_upload(e: events.UploadEventArguments) -> None:
-            name = e.name or ""
-            payload = e.content.read()
+            # NiceGUI's UploadEventArguments stub is incomplete: at runtime
+            # it carries `name` (filename) and `content` (file-like) attrs.
+            name: str = getattr(e, "name", "") or ""
+            payload: bytes = e.content.read()  # type: ignore[attr-defined]
             algo_id = _infer_algo_id(name)
             if not _ALGO_ID.match(algo_id):
                 ui.notify(
@@ -260,7 +264,8 @@ async def plugins_page() -> None:
             await _render()
 
         def _bridge(e: events.UploadEventArguments) -> None:
-            asyncio.create_task(_handle_upload(e))
+            _bg_tasks.add(task := asyncio.create_task(_handle_upload(e)))
+            task.add_done_callback(_bg_tasks.discard)
 
         ui.upload(
             on_upload=_bridge, auto_upload=True, max_files=1,

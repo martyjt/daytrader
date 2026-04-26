@@ -1,10 +1,8 @@
 """Tests for the paper trading executor."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
-
-import pytest
 
 from daytrader.core.types.orders import Order, OrderSide, OrderStatus, OrderType
 from daytrader.execution.paper import PaperExecutor
@@ -26,7 +24,7 @@ def _make_order(
         type=OrderType.MARKET,
         quantity=quantity,
         status=OrderStatus.PENDING,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         price=price,
     )
 

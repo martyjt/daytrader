@@ -9,7 +9,7 @@ feature snapshot at the moment of emission.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -25,7 +25,7 @@ class SignalContribution:
     weight: float | None = None
     reason: str = ""
     features_snapshot: dict[str, float] = field(default_factory=dict)
-    children: tuple["SignalContribution", ...] = ()
+    children: tuple[SignalContribution, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,10 +63,10 @@ class Signal:
         reason: str = "",
         attribution: SignalContribution | None = None,
         metadata: dict[str, Any] | None = None,
-    ) -> "Signal":
+    ) -> Signal:
         return cls(
             id=uuid4(),
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             symbol_key=symbol_key,
             score=score,
             confidence=confidence,

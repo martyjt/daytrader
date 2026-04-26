@@ -9,8 +9,7 @@ catches it.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from decimal import Decimal
+from datetime import UTC, datetime
 from uuid import UUID
 
 import polars as pl
@@ -28,7 +27,6 @@ from daytrader.backtest.engine import BacktestEngine
 from daytrader.core.types.bars import Timeframe
 from daytrader.core.types.symbols import AssetClass, Symbol
 from daytrader.storage.models import TenantModel, UserModel
-
 
 TENANT_A = UUID("00000000-0000-0000-0000-0000000000aa")
 USER_A = UUID("00000000-0000-0000-0000-0000000000a1")
@@ -105,7 +103,7 @@ async def _shutdown(manager):
 def _synthetic_bars(n: int = 50) -> pl.DataFrame:
     """Build a deterministic OHLCV series — alternating up/down by 1."""
     timestamps = [
-        datetime(2026, 1, 1, tzinfo=timezone.utc).replace(day=(i % 28) + 1, month=((i // 28) % 12) + 1)
+        datetime(2026, 1, 1, tzinfo=UTC).replace(day=(i % 28) + 1, month=((i // 28) % 12) + 1)
         for i in range(n)
     ]
     closes = [100.0 + (1.0 if i % 2 == 0 else -0.5) * i for i in range(n)]
@@ -134,8 +132,8 @@ async def test_backtest_run_with_sandboxed_algo(db, manager):
         algorithm=algo,
         symbol=Symbol("BTC", "USDT", AssetClass.CRYPTO, "binance"),
         timeframe=Timeframe.D1,
-        start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        end=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        start=datetime(2026, 1, 1, tzinfo=UTC),
+        end=datetime(2026, 6, 1, tzinfo=UTC),
         initial_capital=10_000.0,
         commission_bps=10.0,
         data=data,
@@ -169,8 +167,8 @@ async def test_backtest_signals_match_replay_bars_directly(db, manager):
         algorithm=algo,
         symbol=Symbol("BTC", "USDT", AssetClass.CRYPTO, "binance"),
         timeframe=Timeframe.D1,
-        start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        start=datetime(2026, 1, 1, tzinfo=UTC),
+        end=datetime(2026, 2, 1, tzinfo=UTC),
         initial_capital=10_000.0,
         data=data,
     )

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from nicegui import ui
 
-from ..services import count_personas, list_discoveries, list_personas
+from ..services import list_discoveries, list_personas
 from ..shell import page_layout, persona_card, stat_card
 
 
@@ -72,7 +72,7 @@ async def _render_regime_summary_card() -> None:
         from ..services_regime import get_current_regime
 
         snap = await get_current_regime()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return
 
     if snap.status != "ok":
@@ -84,7 +84,7 @@ async def _render_regime_summary_card() -> None:
         "bear": "negative",
         "sideways": "warning",
     }.get(snap.regime, "primary")
-    top_pct = int(round(snap.probabilities.get(snap.regime, 0.0) * 100))
+    top_pct = round(snap.probabilities.get(snap.regime, 0.0) * 100)
     stat_card(
         "Market Regime",
         f"{snap.regime.upper()} {top_pct}%",
@@ -127,7 +127,7 @@ async def _render_recent_discoveries() -> None:
     """Top 5 significant discoveries by lift, most recent first."""
     try:
         rows = await list_discoveries(significant_only=True, limit=5)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         ui.label(f"Could not load discoveries: {exc}").classes("text-negative text-caption")
         return
     if not rows:

@@ -10,13 +10,14 @@ can remember recent signals within a window.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from ...core.types.signals import Signal
 
 
 def weighted_average(
-    signals: list[Signal | None],
+    signals: Sequence[Signal | None],
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
@@ -32,7 +33,7 @@ def weighted_average(
     valid_confidences: list[float] = []
     valid_weights: list[float] = []
 
-    for sig, w in zip(signals, weights):
+    for sig, w in zip(signals, weights, strict=False):
         if sig is not None:
             valid_scores.append(sig.score)
             valid_confidences.append(sig.confidence)
@@ -45,13 +46,10 @@ def weighted_average(
     if total_w == 0:
         return None
 
-    if normalize:
-        norm_weights = [w / total_w for w in valid_weights]
-    else:
-        norm_weights = valid_weights
+    norm_weights = [w / total_w for w in valid_weights] if normalize else valid_weights
 
-    score = sum(s * w for s, w in zip(valid_scores, norm_weights))
-    confidence = sum(c * w for c, w in zip(valid_confidences, norm_weights))
+    score = sum(s * w for s, w in zip(valid_scores, norm_weights, strict=False))
+    confidence = sum(c * w for c, w in zip(valid_confidences, norm_weights, strict=False))
 
     score = max(-1.0, min(1.0, score))
     confidence = max(0.0, min(1.0, confidence))
@@ -59,7 +57,7 @@ def weighted_average(
 
 
 def majority_vote(
-    signals: list[Signal | None],
+    signals: Sequence[Signal | None],
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
@@ -72,7 +70,7 @@ def majority_vote(
     """
     min_agreement = (params or {}).get("min_agreement", 0.5)
 
-    valid = [(sig, w) for sig, w in zip(signals, weights) if sig is not None]
+    valid = [(sig, w) for sig, w in zip(signals, weights, strict=False) if sig is not None]
     if not valid:
         return None
 
@@ -97,7 +95,7 @@ def majority_vote(
 
 
 def threshold_filter(
-    signals: list[Signal | None],
+    signals: Sequence[Signal | None],
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
@@ -127,7 +125,7 @@ def threshold_filter(
 
 
 def unanimous(
-    signals: list[Signal | None],
+    signals: Sequence[Signal | None],
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
@@ -153,7 +151,7 @@ def unanimous(
 
 
 def _latest_signals_in_window(
-    signals: list[Signal | None],
+    signals: Sequence[Signal | None],
     state: dict[str, Any] | None,
     window: int,
 ) -> list[tuple[float, float] | None]:
@@ -187,7 +185,7 @@ def _latest_signals_in_window(
 
 
 def rolling_unanimous(
-    signals: list[Signal | None],
+    signals: Sequence[Signal | None],
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,
@@ -233,7 +231,7 @@ def rolling_unanimous(
 
 
 def rolling_majority_vote(
-    signals: list[Signal | None],
+    signals: Sequence[Signal | None],
     weights: list[float],
     *,
     params: dict[str, Any] | None = None,

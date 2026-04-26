@@ -5,7 +5,6 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -13,7 +12,6 @@ from daytrader.core.context import tenant_scope
 from daytrader.execution.kill_switch import KillSwitch
 from daytrader.storage.models import PersonaModel, TenantModel
 from daytrader.storage.repository import TenantRepository
-
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -188,7 +186,7 @@ async def test_activate_continues_when_plugin_shutdown_raises(
     await _add_persona(session, "Live Bot", "live")
 
     class Boom(_FakePluginManager):
-        async def shutdown_tenant(self, tenant_id):  # type: ignore[override]
+        async def shutdown_tenant(self, tenant_id):
             raise RuntimeError("worker stuck")
 
     pm = Boom(tenants_with_workers={TENANT_ID})

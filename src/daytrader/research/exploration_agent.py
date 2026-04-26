@@ -148,7 +148,7 @@ class ExplorationAgent:
                     n_folds=self._config.n_folds,
                     min_train=self._config.min_train,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # Record a skip row with p=None so BH ignores it.
                 results.append((cand, _FailedLift(error=str(exc))))
                 p_values.append(None)
@@ -165,7 +165,7 @@ class ExplorationAgent:
         n_significant = 0
         async with get_session() as session:
             with tenant_scope(tenant_id):
-                for (cand, lift), is_sig, q in zip(results, sig_flags, qs):
+                for (cand, lift), is_sig, q in zip(results, sig_flags, qs, strict=False):
                     if isinstance(lift, _FailedLift):
                         row = DiscoveryModel(
                             tenant_id=tenant_id,
@@ -330,7 +330,7 @@ class ExplorationAgent:
         for sid in ids:
             try:
                 df = await adapter.fetch_series(sid, start, end)
-            except Exception:  # noqa: BLE001 — skip unavailable series
+            except Exception:
                 continue
             if df.is_empty():
                 continue
@@ -359,7 +359,7 @@ class ExplorationAgent:
         for query in self._config.sentiment_queries:
             try:
                 events = await adapter.fetch_news(query, start, end, limit=100)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
             if not events:
                 continue
@@ -440,7 +440,7 @@ def _align_to_timestamps(
     if not src_ts or len(src_vals) == 0:
         return out
     # Ensure sortable comparables.
-    src_pairs = sorted(zip(src_ts, src_vals), key=lambda p: p[0])
+    src_pairs = sorted(zip(src_ts, src_vals, strict=False), key=lambda p: p[0])
     j = 0
     last = np.nan
     for i, t in enumerate(target_ts):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -61,7 +61,7 @@ async def authenticate(email: str, password: str) -> SessionUser:
             )
             raise AuthError("Invalid email or password")
 
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now(UTC)
         await session.commit()
 
         await audit.record(
@@ -133,7 +133,7 @@ async def set_active(user_id: UUID, active: bool) -> bool:
             update(UserModel).where(UserModel.id == user_id).values(is_active=active)
         )
         await session.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined]
 
 
 async def change_password(user_id: UUID, new_password: str) -> bool:
@@ -144,4 +144,4 @@ async def change_password(user_id: UUID, new_password: str) -> bool:
             .values(password_hash=hash_password(new_password))
         )
         await session.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined]

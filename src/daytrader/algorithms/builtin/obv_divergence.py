@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import obv as _obv
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import obv as _obv
 
 
 class OBVDivergenceAlgorithm(Algorithm):
@@ -47,8 +47,8 @@ class OBVDivergenceAlgorithm(Algorithm):
         return self._lookback + 1
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
-        closes = ctx.history_arrays.get("close")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        volumes = ctx.history_arrays["volume"]
         if closes is None or len(closes) < self.warmup_bars():
             return None
 

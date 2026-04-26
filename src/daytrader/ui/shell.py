@@ -6,6 +6,8 @@ dark-themed layout with persistent navigation.
 
 from __future__ import annotations
 
+from typing import Any
+
 from nicegui import ui
 
 from ..auth.roles import ROLE_SUPER_ADMIN
@@ -105,15 +107,14 @@ def _render_user_menu() -> None:
     label_text = sess.display_name or sess.email
     with ui.button(icon="account_circle").props("flat dense round").classes(
         "text-grey-4"
-    ):
-        with ui.menu():
-            with ui.row().classes("items-center q-pa-sm gap-2"):
-                ui.icon("person").classes("text-grey-5")
-                with ui.column().classes("gap-0"):
-                    ui.label(label_text).classes("text-body2")
-                    ui.label(sess.role).classes("text-caption text-grey-6")
-            ui.separator()
-            ui.menu_item("Sign out", on_click=lambda: ui.navigate.to("/logout"))
+    ), ui.menu():
+        with ui.row().classes("items-center q-pa-sm gap-2"):
+            ui.icon("person").classes("text-grey-5")
+            with ui.column().classes("gap-0"):
+                ui.label(label_text).classes("text-body2")
+                ui.label(sess.role).classes("text-caption text-grey-6")
+        ui.separator()
+        ui.menu_item("Sign out", on_click=lambda: ui.navigate.to("/logout"))
 
 
 _REGIME_COLORS = {
@@ -141,7 +142,7 @@ def _render_regime_badge() -> None:
             from .services_regime import get_current_regime
 
             snapshot = await get_current_regime()
-        except Exception:  # noqa: BLE001 — never let the badge break the page
+        except Exception:
             return
 
         # Mutating a label whose parent slot has been torn down (page nav)
@@ -154,11 +155,11 @@ def _render_regime_badge() -> None:
 
             regime_text = snapshot.regime.upper()
             color_cls = _REGIME_COLORS.get(snapshot.regime, "grey")
-            top_pct = int(round(snapshot.probabilities.get(snapshot.regime, 0.0) * 100))
+            top_pct = round(snapshot.probabilities.get(snapshot.regime, 0.0) * 100)
             label.text = f"Regime: {regime_text} {top_pct}%"
             label.classes(replace=f"text-caption text-{color_cls}")
             probs_str = " · ".join(
-                f"{k}: {int(round(v*100))}%" for k, v in snapshot.probabilities.items()
+                f"{k}: {round(v*100)}%" for k, v in snapshot.probabilities.items()
             )
             label.tooltip(
                 f"Pulse: {snapshot.pulse_symbol} {snapshot.pulse_timeframe} "
@@ -281,10 +282,10 @@ def stat_card(
 
 
 def persona_card(
-    persona: object,
+    persona: Any,
     *,
-    on_delete=None,
-    on_refresh=None,
+    on_delete: Any = None,
+    on_refresh: Any = None,
 ) -> None:
     """Card showing a persona's name, mode, equity, P&L, and actions."""
     ic = float(getattr(persona, "initial_capital", 0) or 0)
@@ -337,7 +338,9 @@ def persona_card(
             ).props("flat dense color=primary")
 
             if mode == "paper":
-                async def _do_promote(pid=persona.id, ac=getattr(persona, "asset_class", "crypto")):
+                _persona_asset_class = getattr(persona, "asset_class", "crypto")
+
+                async def _do_promote(pid=persona.id, ac=_persona_asset_class):
                     venue = "binance" if ac == "crypto" else "alpaca"
                     try:
                         from .services import promote_to_live

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
 
 from daytrader.risk.global_risk import GlobalRiskConfig, GlobalRiskMonitor
-
 
 # ---------------------------------------------------------------------------
 # GlobalRiskConfig
@@ -95,7 +94,7 @@ async def test_breach_callback_invoked():
 
 async def test_no_staleness_when_fresh():
     monitor = GlobalRiskMonitor(GlobalRiskConfig(data_staleness_seconds=120))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     monitor.record_data_timestamp("BTC/USDT", now)
 
     stale = await monitor.check_staleness()
@@ -104,7 +103,7 @@ async def test_no_staleness_when_fresh():
 
 async def test_staleness_detected():
     monitor = GlobalRiskMonitor(GlobalRiskConfig(data_staleness_seconds=60))
-    old = datetime.now(timezone.utc) - timedelta(seconds=120)
+    old = datetime.now(UTC) - timedelta(seconds=120)
     monitor.record_data_timestamp("BTC/USDT", old)
 
     stale = await monitor.check_staleness()
@@ -117,7 +116,7 @@ async def test_staleness_callback_invoked():
         GlobalRiskConfig(data_staleness_seconds=10),
         on_breach=callback,
     )
-    old = datetime.now(timezone.utc) - timedelta(seconds=60)
+    old = datetime.now(UTC) - timedelta(seconds=60)
     monitor.record_data_timestamp("ETH/USDT", old)
 
     await monitor.check_staleness()
@@ -145,7 +144,7 @@ async def test_reset_clears_state():
 
     monitor.reset()
     assert monitor.is_breached is False
-    assert monitor.peak_equity == 0.0
+    assert monitor.peak_equity == 0.0  # type: ignore[unreachable]
 
 
 # ---------------------------------------------------------------------------

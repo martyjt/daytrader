@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import ichimoku_lines
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
 from ...core.types.visualize import (
@@ -18,6 +16,8 @@ from ...core.types.visualize import (
     VisualizeContext,
     nan_array_to_jsonable,
 )
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import ichimoku_lines
 
 
 class IchimokuCloudAlgorithm(Algorithm):
@@ -64,9 +64,9 @@ class IchimokuCloudAlgorithm(Algorithm):
         return self._span_b_period + self._displacement
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        closes = ctx.history_arrays.get("close")
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        closes = ctx.history_arrays["close"]
         if closes is None or len(closes) < self.warmup_bars():
             return None
 
@@ -153,7 +153,7 @@ class IchimokuCloudAlgorithm(Algorithm):
 
         # Band between span_a and span_b is the "cloud".
         band_data: list[list[float | None]] = []
-        for a, b in zip(disp_a, disp_b):
+        for a, b in zip(disp_a, disp_b, strict=False):
             if a != a or b != b:  # NaN
                 band_data.append([None, None])
             else:

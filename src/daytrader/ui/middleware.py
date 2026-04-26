@@ -12,7 +12,6 @@ from nicegui import ui
 
 from ..auth.session import is_authenticated, require_role
 
-
 _PUBLIC_PATHS = {"/login", "/logout"}
 
 

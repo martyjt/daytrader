@@ -35,7 +35,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ class FeatureHydrator:
                 return await self._hydrate_sentiment(meta, now=now)
             if source == "cross_asset":
                 return await self._hydrate_cross_asset(meta, now=now)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "Feature hydration failed for source=%s name=%s",
                 source, discovery.candidate_name,
@@ -127,7 +127,7 @@ class FeatureHydrator:
             return self._cache_put(_CacheKey("fred", str(series_id)), None)
 
         adapter = MacroAdapterRegistry.get("fred")
-        end = now or datetime.now(timezone.utc)
+        end = now or datetime.now(UTC)
         # FRED daily series — pull a 30-day window so we always get the
         # most recent observation even for weekly/monthly cadences.
         start = end - timedelta(days=30)
@@ -155,7 +155,7 @@ class FeatureHydrator:
             return self._cache_put(_CacheKey("sentiment", str(query)), None)
 
         adapter = SentimentAdapterRegistry.get("newsapi")
-        end = now or datetime.now(timezone.utc)
+        end = now or datetime.now(UTC)
         # NewsAPI free tier limits historical depth; 24h is enough for a
         # rolling sentiment read.
         start = end - timedelta(days=1)
@@ -185,7 +185,7 @@ class FeatureHydrator:
         AdapterRegistry.auto_register()
         try:
             symbol = Symbol.parse(str(symbol_raw))
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning(
                 "cross_asset symbol %r could not be parsed", symbol_raw,
             )
@@ -207,7 +207,7 @@ class FeatureHydrator:
             )
 
         timeframe = Timeframe(meta.get("timeframe", "1d"))
-        end = now or datetime.now(timezone.utc)
+        end = now or datetime.now(UTC)
         start = end - timedelta(days=10)
         df = await adapter.fetch_ohlcv(symbol, timeframe, start, end)
         value: float | None = None
@@ -245,7 +245,7 @@ _singleton: FeatureHydrator | None = None
 
 def get_feature_hydrator() -> FeatureHydrator:
     """Return the process-wide ``FeatureHydrator`` instance."""
-    global _singleton  # noqa: PLW0603
+    global _singleton
     if _singleton is None:
         _singleton = FeatureHydrator()
     return _singleton
@@ -253,5 +253,5 @@ def get_feature_hydrator() -> FeatureHydrator:
 
 def reset_feature_hydrator() -> None:
     """Reset the singleton — for tests only."""
-    global _singleton  # noqa: PLW0603
+    global _singleton
     _singleton = None

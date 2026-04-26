@@ -28,12 +28,12 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from ...core.types.signals import Signal
+
 # These imports happen BEFORE the import hook is installed — they're part of
 # the worker's trusted bootstrap. Everything they pull into sys.modules is
 # baseline. The hook only blocks NEW imports of forbidden modules.
 from ..base import Algorithm
-from ...core.context import AlgorithmContext
-from ...core.types.signals import Signal
 from . import protocol
 
 # Modules a tenant plugin must never import. Even if a plugin reaches the
@@ -236,9 +236,10 @@ def _dispatch(req: dict[str, Any], plugins: dict[str, Algorithm]) -> Any:
     algo_id = req.get("algo_id")
     if not isinstance(algo_id, str):
         raise protocol.ProtocolError(f"{op} requires algo_id")
-    algo = plugins.get(algo_id)
-    if algo is None:
+    looked_up: Algorithm | None = plugins.get(algo_id)
+    if looked_up is None:
         raise PluginError(f"Plugin {algo_id!r} not loaded")
+    algo = looked_up
 
     if op == "manifest":
         return _serialize_manifest(algo)

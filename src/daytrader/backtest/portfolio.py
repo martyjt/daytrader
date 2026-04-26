@@ -114,7 +114,7 @@ async def run_portfolio_backtest(
                 risk_config=RiskConfig.disabled(),
                 params=algo_params,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             results.append(PortfolioSymbolResult(
                 symbol=symbol.key,
                 net_return_pct=0.0,

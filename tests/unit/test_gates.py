@@ -1,6 +1,6 @@
 """Tests for promotion gates."""
 
-from daytrader.core.gates import GateCheck, GateEvaluator, GateResult
+from daytrader.core.gates import GateEvaluator
 
 
 def _mock_backtest_result(sharpe: float = 0.6, num_trades: int = 40):

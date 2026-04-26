@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
 from ...core.types.visualize import PlotTrace, VisualizeContext
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from . import protocol
 from .manager import PluginRuntimeError, PluginWorkerManager
 

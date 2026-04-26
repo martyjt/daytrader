@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 
 
 def _rolling_vwap(
@@ -105,10 +105,10 @@ class VWAPBandsAlgorithm(Algorithm):
         window = ctx.param("window", self._window)
         std_dev = ctx.param("std_dev", self._std_dev)
 
-        closes = ctx.history_arrays.get("close")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
         if (
             closes is None

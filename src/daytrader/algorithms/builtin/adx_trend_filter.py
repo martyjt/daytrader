@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import true_range
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import true_range
 
 
 class ADXTrendFilterAlgorithm(Algorithm):

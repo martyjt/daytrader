@@ -10,11 +10,10 @@ scheduled bar processing, and real-time P&L updates to the UI.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from ..core.types.orders import Order, OrderSide, OrderStatus, OrderType
+from ..core.types.orders import Order, OrderSide, OrderStatus
 from .base import ExecutionAdapter
 
 

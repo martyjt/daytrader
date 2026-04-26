@@ -19,17 +19,15 @@ standalone backtest (auto-train on initial history).
 from __future__ import annotations
 
 import warnings
-from typing import Any
 
 import numpy as np
 import polars as pl
 from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
-
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 
 _FEATURE_NAMES = [
     "log_return",
@@ -184,12 +182,12 @@ class RegimeHMMAlgorithm(Algorithm):
         ):
             self._auto_retrain_from_context(ctx)
 
-        closes = ctx.history_arrays.get("close")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
-        if closes is None or len(closes) < self._lookback:
+        if len(closes) < self._lookback:
             return None
 
         # Build features for recent window and predict regime
@@ -206,6 +204,8 @@ class RegimeHMMAlgorithm(Algorithm):
         if len(valid_features) < 5:
             return None
 
+        # _is_trained ⇒ both _scaler and _model are set
+        assert self._scaler is not None and self._model is not None
         scaled = self._scaler.transform(valid_features)
         state_probs = self._model.predict_proba(scaled)
         current_probs = state_probs[-1]  # last bar
@@ -289,6 +289,7 @@ class RegimeHMMAlgorithm(Algorithm):
         (index 0 in the feature matrix): highest → bull,
         lowest → bear, middle → sideways.
         """
+        assert self._model is not None  # only called after _fit() succeeds
         means = self._model.means_  # (n_regimes, n_features)
         # log_return is feature index 0
         return_means = means[:, 0]
@@ -320,12 +321,12 @@ class RegimeHMMAlgorithm(Algorithm):
 
     def _auto_train_from_context(self, ctx: AlgorithmContext) -> None:
         """Auto-train on the first half of available history."""
-        closes = ctx.history_arrays.get("close")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
-        if closes is None or len(closes) < self._lookback * 2:
+        if len(closes) < self._lookback * 2:
             return
 
         half = len(closes) // 2
@@ -333,12 +334,12 @@ class RegimeHMMAlgorithm(Algorithm):
 
     def _auto_retrain_from_context(self, ctx: AlgorithmContext) -> None:
         """Retrain on recent lookback bars."""
-        closes = ctx.history_arrays.get("close")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
-        if closes is None or len(closes) < self._lookback:
+        if len(closes) < self._lookback:
             return
 
         self._fit(

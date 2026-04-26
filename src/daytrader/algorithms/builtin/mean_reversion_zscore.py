@@ -6,10 +6,10 @@ sell when it rises above +2. Foundation for pairs trading.
 
 from __future__ import annotations
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import zscore as _zscore
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import zscore as _zscore
 
 
 class MeanReversionZScoreAlgorithm(Algorithm):
@@ -47,7 +47,7 @@ class MeanReversionZScoreAlgorithm(Algorithm):
         return self._period + 1
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
-        closes = ctx.history_arrays.get("close")
+        closes = ctx.history_arrays["close"]
         if closes is None or len(closes) < self.warmup_bars():
             return None
 

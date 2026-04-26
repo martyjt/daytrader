@@ -70,7 +70,7 @@ async def signal_feed_page() -> None:
         return
 
     ui.label("Live Signal Feed").classes("text-h5 q-pb-xs")
-    status_label = ui.label(
+    ui.label(
         "Most recent 100 signals across all personas. Streams live as the "
         "trading loop emits them — no manual refresh."
     ).classes("text-caption text-grey-5 q-pb-md")
@@ -84,7 +84,7 @@ async def signal_feed_page() -> None:
     try:
         signals = await list_recent_signals(limit=_MAX_ROWS)
         personas = await list_personas()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         with grid_container:
             ui.label(f"Failed to load: {exc}").classes("text-negative")
         return
@@ -152,9 +152,13 @@ async def signal_feed_page() -> None:
                         "defaultColDef": {"sortable": True, "resizable": True},
                     }).classes("w-full")
             else:
-                state["grid"].options["rowData"] = list(rows)
-                state["grid"].update()
-            state["count_label"].text = f"{len(rows)} signal(s) · live"
+                grid = state["grid"]
+                assert isinstance(grid, ui.aggrid)
+                grid.options["rowData"] = list(rows)
+                grid.update()
+            cl = state["count_label"]
+            assert isinstance(cl, ui.label)
+            cl.text = f"{len(rows)} signal(s) · live"
         except RuntimeError:
             # Element torn down by page nav — let the disconnect handler
             # cancel the subscriber. Don't try to mutate further.

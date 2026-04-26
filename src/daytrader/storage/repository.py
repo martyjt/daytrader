@@ -8,7 +8,8 @@ impossible rather than merely unlikely.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func as sa_func
@@ -31,7 +32,11 @@ class TenantRepository:
 
     def __init__(self, session: AsyncSession, model_class: type) -> None:
         self._session = session
-        self._model = model_class
+        # `Any` so mypy doesn't trip over `self._model.tenant_id` /
+        # `self._model.id` — those columns exist on every TenantMixin
+        # subclass passed in here, but we'd need a Protocol or TypeVar
+        # bound to express that and it's not worth the complexity.
+        self._model: Any = model_class
 
     def _base_query(self) -> Any:
         return select(self._model).where(

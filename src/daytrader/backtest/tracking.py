@@ -10,12 +10,12 @@ not installed.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from ..core.gates import GateResult
     from .engine import BacktestResult
     from .walk_forward import WalkForwardResult
-    from ..core.gates import GateResult
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,9 @@ class ExperimentTracker:
                         "gate_stage": gate_result.stage,
                     })
 
-                return mlflow.active_run().info.run_id
+                run = mlflow.active_run()
+                assert run is not None  # we just opened it
+                return run.info.run_id
 
         except Exception as exc:
             logger.debug("mlflow logging failed: %s", exc)
@@ -152,7 +154,9 @@ class ExperimentTracker:
                         "gate_stage": gate_result.stage,
                     })
 
-                return mlflow.active_run().info.run_id
+                run = mlflow.active_run()
+                assert run is not None  # we just opened it
+                return run.info.run_id
 
         except Exception as exc:
             logger.debug("mlflow logging failed: %s", exc)

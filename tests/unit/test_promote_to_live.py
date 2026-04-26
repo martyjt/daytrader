@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,14 +11,12 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from daytrader.core.context import tenant_scope
-from daytrader.core.events.base import EventType
 from daytrader.storage.models import (
     JournalEntryModel,
     PersonaModel,
     TenantModel,
 )
 from daytrader.storage.repository import TenantRepository
-
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -57,7 +55,7 @@ async def _patch_deps(engine, monkeypatch):
 
 async def _create_persona(session, mode="paper", days_ago=30) -> UUID:
     pid = uuid4()
-    created = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    created = datetime.now(UTC) - timedelta(days=days_ago)
     with tenant_scope(TENANT_ID):
         repo = TenantRepository(session, PersonaModel)
         await repo.create(
@@ -126,7 +124,7 @@ async def test_promote_fails_gates_insufficient_days(session, _patch_deps):
 
     from daytrader.ui.services import promote_to_live
 
-    persona, gate_result = await promote_to_live(pid, venue="binance")
+    _persona, gate_result = await promote_to_live(pid, venue="binance")
 
     assert gate_result.overall_pass is False
 

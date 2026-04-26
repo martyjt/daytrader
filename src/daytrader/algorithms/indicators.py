@@ -162,11 +162,11 @@ def ichimoku_lines(
     """
     n = len(highs)
 
-    def _midpoint(h: np.ndarray, l: np.ndarray, period: int) -> np.ndarray:
+    def _midpoint(h: np.ndarray, lo: np.ndarray, period: int) -> np.ndarray:
         out = np.full(n, np.nan)
         for i in range(period - 1, n):
             window_h = h[i - period + 1 : i + 1]
-            window_l = l[i - period + 1 : i + 1]
+            window_l = lo[i - period + 1 : i + 1]
             out[i] = (np.max(window_h) + np.min(window_l)) / 2.0
         return out
 

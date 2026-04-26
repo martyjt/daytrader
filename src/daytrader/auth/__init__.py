@@ -21,10 +21,10 @@ from .session import (
 )
 
 __all__ = [
+    "ROLES",
     "ROLE_MEMBER",
     "ROLE_OWNER",
     "ROLE_SUPER_ADMIN",
-    "ROLES",
     "SessionUser",
     "current_session",
     "current_tenant_id",

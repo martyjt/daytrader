@@ -30,13 +30,13 @@ import polars as pl
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
 from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from .gym_env import _GYM_AVAILABLE, _DEFAULT_WINDOW, make_env
 from ..builtin.torch_base import build_dl_feature_matrix
+from .gym_env import _DEFAULT_WINDOW, _GYM_AVAILABLE, make_env
 
 
 def _require_sb3():
     try:
-        from stable_baselines3 import PPO  # type: ignore
+        from stable_baselines3 import PPO
         return PPO
     except ImportError as exc:
         raise ImportError(

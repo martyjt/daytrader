@@ -46,18 +46,17 @@ async def cache_page() -> None:
         files = sorted(_CACHE_DIR.glob("*.parquet"))
         total_bytes = sum(f.stat().st_size for f in files)
 
-        with status:
-            with ui.row().classes("gap-4 items-center"):
-                ui.badge(f"{len(files)} files", color="primary").props("outline")
-                ui.badge(
-                    f"{_fmt_bytes(total_bytes)}", color="grey-8",
-                ).props("outline")
-                ui.space()
-                ui.button(
-                    "Clear all cache",
-                    icon="delete_sweep",
-                    on_click=_clear_all,
-                ).props("color=negative outline dense")
+        with status, ui.row().classes("gap-4 items-center"):
+            ui.badge(f"{len(files)} files", color="primary").props("outline")
+            ui.badge(
+                f"{_fmt_bytes(total_bytes)}", color="grey-8",
+            ).props("outline")
+            ui.space()
+            ui.button(
+                "Clear all cache",
+                icon="delete_sweep",
+                on_click=_clear_all,
+            ).props("color=negative outline dense")
 
         if not files:
             with table_container:

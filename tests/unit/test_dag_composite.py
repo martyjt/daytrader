@@ -1,8 +1,6 @@
 """Tests for CompositeAlgorithm — the DAG execution engine."""
 
 from datetime import datetime, timedelta
-from decimal import Decimal
-from uuid import uuid4
 
 import numpy as np
 import polars as pl
@@ -12,8 +10,7 @@ from daytrader.algorithms.dag.composite import CompositeAlgorithm
 from daytrader.algorithms.dag.types import DAGDefinition, DAGEdge, DAGNode
 from daytrader.algorithms.registry import AlgorithmRegistry
 from daytrader.backtest.engine import BacktestEngine
-from daytrader.core.context import AlgorithmContext
-from daytrader.core.types.bars import Bar, Timeframe
+from daytrader.core.types.bars import Timeframe
 from daytrader.core.types.symbols import AssetClass, Symbol
 
 

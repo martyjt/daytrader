@@ -41,10 +41,7 @@ def render_param_form(
     groups: dict[str, list[AlgorithmParam]] = {}
     for p in params:
         desc = p.description or ""
-        if desc.startswith("[") and "]" in desc:
-            group = desc[1 : desc.index("]")]
-        else:
-            group = ""
+        group = desc[1:desc.index("]")] if desc.startswith("[") and "]" in desc else ""
         groups.setdefault(group, []).append(p)
 
     with container:

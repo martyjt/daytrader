@@ -13,6 +13,7 @@ import asyncio
 import time
 from datetime import datetime
 
+import pandas as pd
 import polars as pl
 
 from ...core.types.bars import Timeframe
@@ -107,6 +108,10 @@ class AlpacaAdapter(DataAdapter):
                 end=end,
             )
             bars = client.get_stock_bars(request)
+            # alpaca-py types this as `BarSet | dict[str, Any]`; .df only
+            # exists on BarSet.
+            if isinstance(bars, dict):
+                return pd.DataFrame()
             return bars.df
 
         pdf = await asyncio.to_thread(_fetch)

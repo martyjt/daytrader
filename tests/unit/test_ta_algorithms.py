@@ -10,25 +10,26 @@ from datetime import datetime, timedelta
 import numpy as np
 import polars as pl
 
-from daytrader.algorithms.builtin.ema_crossover import EMACrossoverAlgorithm
-from daytrader.algorithms.builtin.rsi_mean_reversion import RSIMeanReversionAlgorithm
-from daytrader.algorithms.builtin.macd_signal import MACDSignalAlgorithm
-from daytrader.algorithms.builtin.bollinger_bands import BollingerBandsAlgorithm
-from daytrader.algorithms.builtin.stochastic_rsi import StochasticRSIAlgorithm
-from daytrader.algorithms.builtin.vwap_bands import VWAPBandsAlgorithm
-from daytrader.algorithms.builtin.supertrend import SupertrendAlgorithm
 from daytrader.algorithms.builtin.adx_trend_filter import ADXTrendFilterAlgorithm
+from daytrader.algorithms.builtin.bollinger_bands import BollingerBandsAlgorithm
+from daytrader.algorithms.builtin.cci_reversal import CCIReversalAlgorithm
 from daytrader.algorithms.builtin.donchian_breakout import DonchianBreakoutAlgorithm
+from daytrader.algorithms.builtin.ema_crossover import EMACrossoverAlgorithm
+
 # Phase 3 algorithms
 from daytrader.algorithms.builtin.ichimoku_cloud import IchimokuCloudAlgorithm
-from daytrader.algorithms.builtin.volume_profile import VolumeProfileAlgorithm
-from daytrader.algorithms.builtin.williams_r import WilliamsRAlgorithm
-from daytrader.algorithms.builtin.cci_reversal import CCIReversalAlgorithm
 from daytrader.algorithms.builtin.keltner_channel import KeltnerChannelAlgorithm
+from daytrader.algorithms.builtin.macd_signal import MACDSignalAlgorithm
+from daytrader.algorithms.builtin.mean_reversion_zscore import MeanReversionZScoreAlgorithm
 from daytrader.algorithms.builtin.obv_divergence import OBVDivergenceAlgorithm
 from daytrader.algorithms.builtin.rsi_divergence import RSIDivergenceAlgorithm
-from daytrader.algorithms.builtin.mean_reversion_zscore import MeanReversionZScoreAlgorithm
+from daytrader.algorithms.builtin.rsi_mean_reversion import RSIMeanReversionAlgorithm
+from daytrader.algorithms.builtin.stochastic_rsi import StochasticRSIAlgorithm
+from daytrader.algorithms.builtin.supertrend import SupertrendAlgorithm
 from daytrader.algorithms.builtin.triple_ema import TripleEMACrossoverAlgorithm
+from daytrader.algorithms.builtin.volume_profile import VolumeProfileAlgorithm
+from daytrader.algorithms.builtin.vwap_bands import VWAPBandsAlgorithm
+from daytrader.algorithms.builtin.williams_r import WilliamsRAlgorithm
 from daytrader.backtest.engine import BacktestEngine
 from daytrader.core.types.bars import Timeframe
 from daytrader.core.types.symbols import AssetClass, Symbol

@@ -202,7 +202,7 @@ async def test_save_rejects_empty_fields(_patch_session):
 async def test_save_invalidates_cached_adapter(_patch_session, monkeypatch):
     # Pre-populate the cache as if an adapter were already built.
     fake_adapter = object()
-    ExecutionRegistry._tenant_adapters[(TENANT_A, "binance")] = fake_adapter  # type: ignore[assignment]
+    ExecutionRegistry._tenant_adapters[(TENANT_A, "binance")] = fake_adapter
 
     await save_credential(
         tenant_id=TENANT_A,

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 import numpy as np
@@ -135,7 +136,7 @@ def test_on_bar_after_training_emits():
     lows = data["low"].to_numpy().astype(float)
     volumes = data["volume"].to_numpy().astype(float)
 
-    emitted = []
+    emitted: list[Any] = []
     logs = []
     ctx = AlgorithmContext(
         tenant_id=uuid4(),

@@ -11,7 +11,7 @@ from __future__ import annotations
 import io
 import json
 import struct
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -23,7 +23,6 @@ from daytrader.core.context import AlgorithmContext
 from daytrader.core.types.bars import Bar, Timeframe
 from daytrader.core.types.signals import Signal, SignalContribution
 from daytrader.core.types.symbols import AssetClass, Symbol
-
 
 # ---------------------------------------------------------------------------
 # Framing
@@ -135,9 +134,9 @@ def _build_ctx() -> AlgorithmContext:
         algorithm_id="my_algo",
         symbol=Symbol("BTC", "USDT", AssetClass.CRYPTO, "binance"),
         timeframe=Timeframe.D1,
-        now=datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc),
+        now=datetime(2026, 4, 25, 12, 0, tzinfo=UTC),
         bar=Bar(
-            timestamp=datetime(2026, 4, 25, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 25, tzinfo=UTC),
             open=Decimal("100.5"),
             high=Decimal("103.5"),
             low=Decimal("99.5"),
@@ -179,9 +178,9 @@ def test_context_with_no_features_or_params():
         tenant_id=uuid4(), persona_id=uuid4(), algorithm_id="x",
         symbol=Symbol("AAPL", "USD", AssetClass.EQUITIES),
         timeframe=Timeframe.M5,
-        now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
         bar=Bar(
-            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
             open=Decimal("100"), high=Decimal("100"), low=Decimal("100"),
             close=Decimal("100"), volume=Decimal("0"),
         ),

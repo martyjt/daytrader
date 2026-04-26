@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from uuid import uuid4
-
-import pytest
 
 from daytrader.core.types.orders import Order, OrderSide, OrderStatus, OrderType
 from daytrader.execution.binance import BinanceExecutor, _map_ccxt_status, _order_type_to_ccxt
-
 
 # ---------------------------------------------------------------------------
 # Ticker conversion

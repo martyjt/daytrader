@@ -5,10 +5,10 @@ Mean-reversion strategy using CCI at +/-100 thresholds.
 
 from __future__ import annotations
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import cci as _cci
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import cci as _cci
 
 
 class CCIReversalAlgorithm(Algorithm):
@@ -46,9 +46,9 @@ class CCIReversalAlgorithm(Algorithm):
         return self._period + 1
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        closes = ctx.history_arrays.get("close")
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        closes = ctx.history_arrays["close"]
         if closes is None or len(closes) < self.warmup_bars():
             return None
 

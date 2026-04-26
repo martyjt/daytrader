@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from .base import DataAdapter
 
 
@@ -11,7 +13,7 @@ class AdapterRegistry:
     Phase 2 will add auto-discovery via entry_points.
     """
 
-    _adapters: dict[str, DataAdapter] = {}
+    _adapters: ClassVar[dict[str, DataAdapter]] = {}
 
     @classmethod
     def register(cls, adapter: DataAdapter) -> None:

@@ -25,9 +25,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -108,10 +109,8 @@ def _put_drop_oldest(q: asyncio.Queue, item: Any) -> None:
         return
     except asyncio.QueueFull:
         pass
-    try:
+    with suppress(asyncio.QueueEmpty):
         q.get_nowait()
-    except asyncio.QueueEmpty:
-        pass
     try:
         q.put_nowait(item)
     except asyncio.QueueFull:

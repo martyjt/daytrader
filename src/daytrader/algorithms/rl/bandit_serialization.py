@@ -42,7 +42,7 @@ class BanditConfig:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "BanditConfig":
+    def from_dict(cls, data: dict) -> BanditConfig:
         return cls(
             id=str(data["id"]),
             name=str(data.get("name", data["id"])),
@@ -109,7 +109,7 @@ def load_all_bandits(bandits_dir: Path | str) -> None:
     for yaml_file in sorted(bandits_dir.glob("*.yaml")):
         try:
             config = load_bandit(yaml_file)
-        except Exception:  # noqa: BLE001 — one bad file shouldn't break startup
+        except Exception:
             continue
         algo = build_bandit_from_config(config)
         if algo is None:

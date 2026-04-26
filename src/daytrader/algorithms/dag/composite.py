@@ -7,16 +7,17 @@ walks combinators in topological order, and returns the root signal.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 from typing import Any
 
+from ...core.context import AlgorithmContext
+from ...core.types.signals import Signal, SignalContribution
 from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ..registry import AlgorithmRegistry
 from .combinators import COMBINATORS
 from .types import DAGDefinition, DAGNode
 from .validation import topological_order, validate
-from ...core.context import AlgorithmContext
-from ...core.types.signals import Signal, SignalContribution
 
 
 class CompositeAlgorithm(Algorithm):
@@ -94,10 +95,8 @@ class CompositeAlgorithm(Algorithm):
         for algo in self._algorithms.values():
             if hasattr(algo, "train") and callable(algo.train):
                 # Only call train if it's not the base Algorithm stub
-                try:
+                with contextlib.suppress(TypeError):
                     algo.train(data)
-                except TypeError:
-                    pass
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
         node_signals: dict[str, Signal | None] = {}
@@ -119,12 +118,15 @@ class CompositeAlgorithm(Algorithm):
                     node, child_signals, child_weights, ctx,
                 )
 
-        root_signal = node_signals.get(self._dag.root_node_id)
+        root_id = self._dag.root_node_id
+        if root_id is None:
+            return None
+        root_signal = node_signals.get(root_id)
         if root_signal is None:
             return None
 
         # Build attribution tree covering every DAG node.
-        attribution = self._build_attribution(self._dag.root_node_id, node_signals)
+        attribution = self._build_attribution(root_id, node_signals)
 
         # Emit directly so the full attribution tree is preserved on the Signal.
         # (``ctx.emit`` wraps a fresh single-node tree that would discard ours.)

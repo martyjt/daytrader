@@ -83,7 +83,7 @@ class TestPairwisePearson:
     def test_constant_series_returns_zero(self) -> None:
         x = np.array([1.0, 1.0, 1.0, 1.0])
         y = np.array([1.0, 2.0, 3.0, 4.0])
-        corr, n = _pairwise_pearson(x, y)
+        corr, _n = _pairwise_pearson(x, y)
         assert corr == 0.0
 
 

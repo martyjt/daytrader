@@ -18,6 +18,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from typing import ClassVar
 
 import polars as pl
 
@@ -69,7 +70,7 @@ class MacroAdapter(ABC):
 class MacroAdapterRegistry:
     """Registry of available macro adapters."""
 
-    _adapters: dict[str, MacroAdapter] = {}
+    _adapters: ClassVar[dict[str, MacroAdapter]] = {}
 
     @classmethod
     def register(cls, adapter: MacroAdapter) -> None:

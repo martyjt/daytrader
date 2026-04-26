@@ -22,6 +22,7 @@ the old version first, then ``load`` the new one.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -132,10 +133,9 @@ async def install_plugin(
     # before we overwrite the file. Best-effort — a fresh worker won't have
     # it loaded and that's fine.
     handle = await manager.get_handle(tenant_id)
-    try:
+    # not loaded — expected on first install
+    with contextlib.suppress(PluginRuntimeError):
         await handle.unload(algo_id)
-    except PluginRuntimeError:
-        pass  # not loaded — expected on first install
 
     target_path.write_bytes(payload)
 
@@ -144,10 +144,8 @@ async def install_plugin(
     except PluginRuntimeError as exc:
         # Roll back the file write — we don't want a half-installed plugin
         # in the directory the next startup will discover.
-        try:
+        with contextlib.suppress(OSError):
             target_path.unlink(missing_ok=True)
-        except OSError:
-            pass
         raise InstallError(f"Plugin failed to load: {exc.error_message}") from exc
 
     manifest = _manifest_from_payload(info["manifest"])

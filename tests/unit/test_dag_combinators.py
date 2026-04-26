@@ -27,7 +27,7 @@ def test_weighted_average_basic():
     signals = [_sig(0.8), _sig(0.4)]
     result = weighted_average(signals, [1.0, 1.0])
     assert result is not None
-    score, conf = result
+    score, _conf = result
     assert abs(score - 0.6) < 0.01  # (0.8 + 0.4) / 2
 
 

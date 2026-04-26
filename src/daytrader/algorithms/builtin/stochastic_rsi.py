@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import rsi as compute_rsi, stochastic, sma
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import rsi as compute_rsi
+from ..indicators import sma, stochastic
 
 
 class StochasticRSIAlgorithm(Algorithm):
@@ -102,10 +103,7 @@ class StochasticRSIAlgorithm(Algorithm):
         oversold = ctx.param("oversold", self._oversold)
         overbought = ctx.param("overbought", self._overbought)
 
-        closes = ctx.history_arrays.get("close")
-        if closes is None:
-            return None
-
+        closes = ctx.history_arrays["close"]
         min_bars = rsi_period + stoch_period + smooth_k + smooth_d
         if len(closes) < min_bars:
             return None

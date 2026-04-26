@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import rsi as _rsi
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import rsi as _rsi
 
 
 class RSIDivergenceAlgorithm(Algorithm):
@@ -50,7 +50,7 @@ class RSIDivergenceAlgorithm(Algorithm):
         return self._rsi_period + self._lookback + 1
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
-        closes = ctx.history_arrays.get("close")
+        closes = ctx.history_arrays["close"]
         if closes is None or len(closes) < self.warmup_bars():
             return None
 

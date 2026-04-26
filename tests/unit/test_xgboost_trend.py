@@ -1,6 +1,7 @@
 """Tests for the XGBoost Trend Classifier algorithm."""
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -131,10 +132,11 @@ def test_on_bar_before_training_returns_none():
 
     from decimal import Decimal
     from uuid import uuid4
+
     from daytrader.core.context import AlgorithmContext
     from daytrader.core.types.bars import Bar
 
-    emitted = []
+    emitted: list[Any] = []
     logs = []
     ctx = AlgorithmContext(
         tenant_id=uuid4(),
@@ -181,10 +183,11 @@ def test_on_bar_after_training_emits():
 
     from decimal import Decimal
     from uuid import uuid4
+
     from daytrader.core.context import AlgorithmContext
     from daytrader.core.types.bars import Bar
 
-    emitted = []
+    emitted: list[Any] = []
     logs = []
     ctx = AlgorithmContext(
         tenant_id=uuid4(),

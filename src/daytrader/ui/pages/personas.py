@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from nicegui import ui
 
-from ..services import create_persona, delete_persona, list_personas
+from ..services import list_personas
 from ..shell import page_layout, persona_card
 
 

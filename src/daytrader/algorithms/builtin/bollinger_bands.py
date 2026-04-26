@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import sma, rolling_std
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
 from ...core.types.visualize import (
@@ -20,6 +18,8 @@ from ...core.types.visualize import (
     VisualizeContext,
     nan_array_to_jsonable,
 )
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import rolling_std, sma
 
 
 class BollingerBandsAlgorithm(Algorithm):
@@ -71,7 +71,7 @@ class BollingerBandsAlgorithm(Algorithm):
         period = ctx.param("period", self._period)
         std_dev = ctx.param("std_dev", self._std_dev)
 
-        closes = ctx.history_arrays.get("close")
+        closes = ctx.history_arrays["close"]
         if closes is None or len(closes) < period:
             return None
 

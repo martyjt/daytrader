@@ -6,8 +6,10 @@ NiceGUI page handlers don't need to worry about either.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import UTC
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from ..auth.session import current_tenant_id
@@ -184,8 +186,8 @@ async def run_walk_forward_service(
     from datetime import datetime as dt
 
     from ..algorithms.registry import AlgorithmRegistry
-    from ..backtest.walk_forward import WalkForwardConfig, WalkForwardEngine
     from ..backtest.risk import RiskConfig
+    from ..backtest.walk_forward import WalkForwardConfig, WalkForwardEngine
     from ..core.types.bars import Timeframe
     from ..core.types.symbols import Symbol
     from ..data.adapters.registry import AdapterRegistry
@@ -260,9 +262,8 @@ async def promote_to_live(
             now = utcnow()
             created = persona.created_at
             if created.tzinfo is None:
-                from datetime import timezone
 
-                created = created.replace(tzinfo=timezone.utc)
+                created = created.replace(tzinfo=UTC)
             days_active = (now - created).days
 
             # Evaluate gates
@@ -317,8 +318,9 @@ async def list_journal_entries(
     limit: int = 200,
 ) -> list[Any]:
     """Query journal entries for the current tenant."""
-    from ..storage.models import JournalEntryModel
     from sqlalchemy import select
+
+    from ..storage.models import JournalEntryModel
 
     async with get_session() as session:
         with tenant_scope(_tenant_id()):
@@ -476,7 +478,7 @@ async def delete_universe(universe_id: UUID) -> bool:
                 .where(SymbolUniverseModel.id == universe_id)
             )
             await session.commit()
-            return result.rowcount > 0
+            return result.rowcount > 0  # type: ignore[attr-defined]
 
 
 async def list_strategies() -> list[Any]:
@@ -540,7 +542,7 @@ async def delete_strategy_config(strategy_id: UUID) -> bool:
                 .where(StrategyConfigModel.id == strategy_id)
             )
             await session.commit()
-            return result.rowcount > 0
+            return result.rowcount > 0  # type: ignore[attr-defined]
 
 
 async def run_portfolio_backtest_service(
@@ -717,7 +719,7 @@ async def update_shadow_status_service(
         )
     except Exception:
         pass
-    return result.rowcount
+    return result.rowcount  # type: ignore[attr-defined]
 
 
 async def run_correlation_scan_service(
@@ -762,7 +764,7 @@ async def update_discovery_status(discovery_id: UUID, status: str) -> bool:
                 .values(status=status)
             )
             await session.commit()
-            return result.rowcount > 0
+            return result.rowcount > 0  # type: ignore[attr-defined]
 
 
 async def promote_discovery(discovery_id: UUID) -> Any:

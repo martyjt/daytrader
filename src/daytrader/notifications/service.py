@@ -56,7 +56,7 @@ async def notify_active(
         return
     try:
         await notifier.notify(tenant_id, message, dedupe_key=dedupe_key)
-    except Exception as exc:  # noqa: BLE001 — notifications must never raise
+    except Exception as exc:
         logger.warning("Notifier failed for tenant %s: %s", tenant_id, exc)
 
 
@@ -81,7 +81,7 @@ async def resolve_webhook_url(tenant_id: UUID) -> str | None:
         return None
     try:
         return get_codec().decrypt(encrypted)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
             "Failed to decrypt webhook URL for tenant %s: %s", tenant_id, exc
         )

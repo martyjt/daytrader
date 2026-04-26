@@ -78,7 +78,7 @@ class TwelveDataAdapter(DataAdapter):
             )
 
         td_symbol = self._to_twelve_symbol(symbol)
-        params = {
+        params: dict[str, str | int] = {
             "symbol": td_symbol,
             "interval": interval,
             "start_date": start.strftime("%Y-%m-%d %H:%M:%S"),
@@ -136,7 +136,7 @@ class TwelveDataAdapter(DataAdapter):
                 latency_ms=round(elapsed, 1),
                 last_successful_call=utcnow(),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return AdapterHealth(status="down", error=str(exc))
 
     # ---- symbol conversion ----------------------------------------------

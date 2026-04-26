@@ -10,6 +10,8 @@ Five tabs:
 
 from __future__ import annotations
 
+from typing import Any
+
 from nicegui import ui
 
 from ..shell import page_layout
@@ -139,10 +141,9 @@ def _build_comparison_tab(
             return
 
         results_area.clear()
-        with results_area:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label(f"Running {len(selected)} backtests...").classes("text-grey-5")
+        with results_area, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label(f"Running {len(selected)} backtests...").classes("text-grey-5")
 
         try:
             from ..services_research import run_comparison_service
@@ -170,7 +171,7 @@ def _build_comparison_tab(
 
 def _render_comparison_results(
     area: ui.element,
-    results: list[tuple[str, object]],
+    results: list[tuple[str, Any]],
     algo_labels: dict[str, str],
     rank_key: str,
 ) -> None:
@@ -228,7 +229,7 @@ def _render_comparison_results(
         }).classes("w-full q-pb-md")
 
         # Overlaid equity curves
-        series = []
+        series: list[dict[str, Any]] = []
         for i, (aid, r) in enumerate(results):
             if r.equity_curve:
                 series.append({
@@ -312,7 +313,7 @@ def _build_sweep_tab(
     results_area = ui.column().classes("w-full q-pt-md")
 
     async def run_sweep() -> None:
-        from ..services_research import expand_param_grid, run_sweep_service, MAX_SWEEP_GRID
+        from ..services_research import MAX_SWEEP_GRID, expand_param_grid, run_sweep_service
 
         grid = expand_param_grid(sweep_config)
         if len(grid) == 0:
@@ -359,7 +360,7 @@ def _build_sweep_tab(
     ).classes("q-mt-sm")
 
 
-def _render_sweep_results(area: ui.element, result: object, rank_key: str) -> None:
+def _render_sweep_results(area: ui.element, result: Any, rank_key: str) -> None:
     area.clear()
     with area:
         ui.label("Sweep Results").classes("text-h6 q-pb-xs")
@@ -378,7 +379,7 @@ def _render_sweep_results(area: ui.element, result: object, rank_key: str) -> No
                         _kpi_card(k.replace("_", " ").title(), f"{v:.2f}")
 
         # Determine swept params for visualization
-        swept = [n for n, spec in zip(result.param_names, result.grid_points[0].items()) if True]
+        [n for n, spec in zip(result.param_names, result.grid_points[0].items(), strict=False) if True]
         swept_params = []
         seen_vals: dict[str, set] = {}
         for pt in result.grid_points:
@@ -410,7 +411,7 @@ def _render_sweep_results(area: ui.element, result: object, rank_key: str) -> No
             }).classes("w-full q-pt-md")
 
 
-def _render_heatmap(result: object, param_x: str, param_y: str, rank_key: str) -> None:
+def _render_heatmap(result: Any, param_x: str, param_y: str, rank_key: str) -> None:
     x_vals = sorted(set(pt[param_x] for pt in result.grid_points))
     y_vals = sorted(set(pt[param_y] for pt in result.grid_points))
     x_map = {v: i for i, v in enumerate(x_vals)}
@@ -459,7 +460,7 @@ def _render_heatmap(result: object, param_x: str, param_y: str, rank_key: str) -
     }).classes("w-full").style("height: 400px")
 
 
-def _render_line_sweep(result: object, param_name: str, rank_key: str) -> None:
+def _render_line_sweep(result: Any, param_name: str, rank_key: str) -> None:
     points = []
     for i, pt in enumerate(result.grid_points):
         points.append((pt[param_name], result.results[i].kpis.get(rank_key, 0.0)))
@@ -532,10 +533,9 @@ def _build_attribution_tab(
 
     async def run_attribution() -> None:
         results_area.clear()
-        with results_area:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label("Running backtest for feature analysis...").classes("text-grey-5")
+        with results_area, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label("Running backtest for feature analysis...").classes("text-grey-5")
 
         try:
             from ..services import run_backtest_service
@@ -633,10 +633,9 @@ def _build_stability_tab(
 
     async def run_stability() -> None:
         results_area.clear()
-        with results_area:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label(f"Running walk-forward ({int(n_folds.value)} folds)...").classes("text-grey-5")
+        with results_area, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label(f"Running walk-forward ({int(n_folds.value)} folds)...").classes("text-grey-5")
 
         try:
             from ..services import run_walk_forward_service
@@ -665,7 +664,7 @@ def _build_stability_tab(
     ).classes("q-mt-sm")
 
 
-def _render_stability_results(area: ui.element, wf: object, metrics: dict) -> None:
+def _render_stability_results(area: ui.element, wf: Any, metrics: dict) -> None:
     area.clear()
     with area:
         ui.label("Stability Results").classes("text-h6 q-pb-xs")
@@ -684,7 +683,7 @@ def _render_stability_results(area: ui.element, wf: object, metrics: dict) -> No
                       color="negative" if metrics["worst_fold_sharpe"] < 0 else "positive")
 
         # Per-fold OOS equity curves overlaid
-        fold_series = []
+        fold_series: list[dict[str, Any]] = []
         for i, fold in enumerate(wf.folds):
             eq = fold.test_result.equity_curve
             if eq:
@@ -777,7 +776,7 @@ def _build_shadow_tab(
     ).classes("text-caption text-grey-5 q-pb-sm")
 
     # State that the universe picker mutates and the run handler reads.
-    universe_state = {"id": None, "name": "", "symbols": []}
+    universe_state: dict[str, Any] = {"id": None, "name": "", "symbols": []}
 
     with ui.card().classes("w-full"):
         ui.label("Tournament config").classes("text-subtitle1 q-pb-sm")
@@ -873,7 +872,7 @@ def _build_shadow_tab(
             from ..services import list_shadow_tournaments_service
 
             rows = await list_shadow_tournaments_service(limit=20)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             with history_area:
                 ui.label(f"Failed to load history: {exc}").classes("text-negative")
             return
@@ -973,7 +972,7 @@ def _build_shadow_tab(
                                     report.tournament_id, c.algo_id, "promoted",
                                 )
                                 ok += 1
-                            except Exception:  # noqa: BLE001
+                            except Exception:
                                 continue
                         ui.notify(
                             f"Promoted {ok}/{len(winners)} winners",
@@ -1038,17 +1037,17 @@ def _build_shadow_tab(
                 ).classes("text-warning")
             return
 
-        symbols = (
-            [symbol_in.value] if mode == "single" else universe_state["symbols"]
+        symbols: list[str] = (
+            [symbol_in.value] if mode == "single" else list(universe_state["symbols"])
         )
-        with result_area:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label(
-                    f"Running {mode} tournament: {primary_in.value} vs "
-                    f"{len(candidates_in.value)} candidate(s) on "
-                    f"{len(symbols)} symbol(s)..."
-                ).classes("text-grey-5")
+        universe_name: str = str(universe_state["name"] or "")
+        with result_area, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label(
+                f"Running {mode} tournament: {primary_in.value} vs "
+                f"{len(candidates_in.value)} candidate(s) on "
+                f"{len(symbols)} symbol(s)..."
+            ).classes("text-grey-5")
 
         try:
             if mode == "single":
@@ -1075,7 +1074,7 @@ def _build_shadow_tab(
                     primary_algo_id=primary_in.value,
                     candidate_algo_ids=list(candidates_in.value),
                     symbols=symbols,
-                    universe_name=universe_state["name"],
+                    universe_name=universe_name,
                     timeframe_str=tf_in.value,
                     start_str=start_in.value,
                     end_str=end_in.value,
@@ -1093,7 +1092,7 @@ def _build_shadow_tab(
                     primary_algo_id=primary_in.value,
                     candidate_algo_ids=list(candidates_in.value),
                     symbols=symbols,
-                    universe_name=universe_state["name"],
+                    universe_name=universe_name,
                     timeframe_str=tf_in.value,
                     start_str=start_in.value,
                     end_str=end_in.value,
@@ -1104,14 +1103,14 @@ def _build_shadow_tab(
                 result_area.clear()
                 with result_area:
                     ui.label(
-                        f"Basket: {universe_state['name']} "
+                        f"Basket: {universe_name} "
                         f"({len(symbols)} symbols, mean across symbols)"
                     ).classes("text-caption text-grey-5 q-pb-xs")
                     _render_single_report(
                         report,
                         header_prefix=f"BASKET ({len(symbols)} symbols) — ",
                     )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             result_area.clear()
             with result_area:
                 ui.icon("error", color="negative")
@@ -1259,12 +1258,11 @@ def _build_portfolio_tab(
                 ui.label("Enter at least one symbol.").classes("text-grey-5")
             return
 
-        with result_area:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label(
-                    f"Backtesting {algo_in.value} on {len(symbols)} symbols..."
-                ).classes("text-grey-5")
+        with result_area, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label(
+                f"Backtesting {algo_in.value} on {len(symbols)} symbols..."
+            ).classes("text-grey-5")
 
         try:
             from ..services import run_portfolio_backtest_service
@@ -1278,7 +1276,7 @@ def _build_portfolio_tab(
                 total_capital=float(capital_in.value or 10_000.0),
                 venue=venue_in.value,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             result_area.clear()
             with result_area:
                 ui.icon("error", color="negative")
@@ -1353,7 +1351,7 @@ def _build_portfolio_tab(
                     )
 
             # Equity curves: portfolio + each symbol (thin)
-            curves = []
+            curves: list[dict[str, Any]] = []
             if report.portfolio_equity_curve:
                 curves.append({
                     "name": "Portfolio (sum)",
@@ -1419,7 +1417,7 @@ def _render_export_button(report, kind: str) -> None:
             else:
                 md = f"(unknown kind: {kind})"
                 title = "Report"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             md = f"Export failed: {exc}"
             title = "Export error"
 
@@ -1429,7 +1427,7 @@ def _render_export_button(report, kind: str) -> None:
                 ui.button(icon="close", on_click=dialog.close).props("flat dense")
             ui.markdown(md).classes("w-full")
             with ui.expansion("Copyable source", icon="content_copy").classes("w-full q-pt-sm"):
-                textarea = ui.textarea(value=md).classes("w-full").props("readonly rows=20")
+                ui.textarea(value=md).classes("w-full").props("readonly rows=20")
 
                 def _copy() -> None:
                     try:
@@ -1437,7 +1435,7 @@ def _render_export_button(report, kind: str) -> None:
                             f"navigator.clipboard.writeText({md!r})"
                         )
                         ui.notify("Report copied to clipboard", type="positive")
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         ui.notify("Copy failed — select from the box", type="warning")
 
                 ui.button("Copy to clipboard", icon="content_copy", on_click=_copy).props(
@@ -1482,7 +1480,7 @@ def _render_shadow_action_row(tournament_id, candidate) -> None:
                 )
             except RuntimeError:
                 return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             try:
                 ui.notify(f"Action failed: {exc}", type="negative")
             except RuntimeError:
@@ -1573,13 +1571,12 @@ def _build_discoveries_tab() -> None:
     async def run_scan() -> None:
         scan_status.clear()
         results_area.clear()
-        with scan_status:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label(
-                    f"Running exploration scan on {symbol_in.value} "
-                    f"{tf_in.value} — this may take a minute..."
-                ).classes("text-grey-5")
+        with scan_status, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label(
+                f"Running exploration scan on {symbol_in.value} "
+                f"{tf_in.value} — this may take a minute..."
+            ).classes("text-grey-5")
         try:
             from ..services import run_exploration_service
 
@@ -1596,7 +1593,7 @@ def _build_discoveries_tab() -> None:
                 include_fred=include_fred_in.value,
                 sentiment_queries=queries,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             scan_status.clear()
             with scan_status:
                 ui.icon("error", size="lg", color="negative")
@@ -1631,10 +1628,9 @@ def _build_discoveries_tab() -> None:
 
     async def run_drift_scan() -> None:
         drift_container.clear()
-        with drift_container:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="md")
-                ui.label("Scanning baseline feature drift...").classes("text-grey-5")
+        with drift_container, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="md")
+            ui.label("Scanning baseline feature drift...").classes("text-grey-5")
         try:
             from ...research.drift_monitor import scan_drift
 
@@ -1642,7 +1638,7 @@ def _build_discoveries_tab() -> None:
                 symbol_str=symbol_in.value,
                 timeframe_str=tf_in.value,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             drift_container.clear()
             with drift_container:
                 ui.label(f"Drift scan failed: {exc}").classes("text-negative")
@@ -1727,7 +1723,7 @@ async def _refresh_discoveries_list(container, *, target_symbol: str | None = No
     container.clear()
     try:
         rows = await list_discoveries(target_symbol=target_symbol, limit=200)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         with container:
             ui.label(f"Failed to load discoveries: {exc}").classes("text-negative")
         return
@@ -1815,7 +1811,7 @@ def _render_discovery_action_row(discovery, outer_container) -> None:
                 type="positive",
                 multi_line=True,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             ui.notify(f"Promotion failed: {exc}", type="negative")
 
     async def _dismiss() -> None:
@@ -1828,7 +1824,7 @@ def _render_discovery_action_row(discovery, outer_container) -> None:
             ui.notify(
                 f"Dismissed {discovery.candidate_name}", type="warning",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             ui.notify(f"Dismiss failed: {exc}", type="negative")
 
     with ui.card().classes("w-full q-pa-sm q-mb-xs"):
@@ -1840,7 +1836,6 @@ def _render_discovery_action_row(discovery, outer_container) -> None:
                 f"{f'{discovery.q_value:.3f}' if discovery.q_value is not None else '—'}"
             ).classes("text-caption text-grey-5")
             ui.space()
-            status_text
             ui.button(
                 "Promote", icon="north",
                 on_click=lambda _e=None: _promote(),

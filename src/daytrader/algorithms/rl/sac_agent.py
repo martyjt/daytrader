@@ -28,7 +28,7 @@ from .gym_env import _DEFAULT_WINDOW, _GYM_AVAILABLE, make_env
 
 def _require_sac():
     try:
-        from stable_baselines3 import SAC  # type: ignore
+        from stable_baselines3 import SAC
         return SAC
     except ImportError as exc:
         raise ImportError(

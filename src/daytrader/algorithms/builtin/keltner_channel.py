@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import ema as _ema, atr as _atr
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import atr as _atr
+from ..indicators import ema as _ema
 
 
 class KeltnerChannelAlgorithm(Algorithm):
@@ -49,9 +50,9 @@ class KeltnerChannelAlgorithm(Algorithm):
         return max(self._ema_period, self._atr_period) + 1
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
-        closes = ctx.history_arrays.get("close")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
+        closes = ctx.history_arrays["close"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
         if closes is None or len(closes) < self.warmup_bars():
             return None
 

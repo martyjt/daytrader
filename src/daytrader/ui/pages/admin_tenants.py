@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from uuid import UUID
 
 from nicegui import app, ui
@@ -121,7 +122,7 @@ def _supervisor_worker_counts() -> dict[str, set[UUID]]:
     manager = getattr(app.state, "supervisor_manager", None)
     if manager is None:
         return {}
-    return {s.name: set(s.workers.keys()) for s in manager._supervisors}  # noqa: SLF001
+    return {s.name: set(s.workers.keys()) for s in manager._supervisors}
 
 
 def _plugin_worker_tenants() -> set[UUID]:
@@ -151,11 +152,9 @@ async def _toggle_button(row: dict, refresh) -> None:
         # than waiting for the next 60s poll.
         manager = getattr(app.state, "supervisor_manager", None)
         if manager is not None:
-            for s in manager._supervisors:  # noqa: SLF001
-                try:
-                    await s._refresh()  # noqa: SLF001
-                except Exception:
-                    pass
+            for s in manager._supervisors:
+                with contextlib.suppress(Exception):
+                    await s._refresh()
         await refresh()
 
     ui.button(label, on_click=_toggle).props(

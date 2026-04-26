@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import NewType
 from uuid import UUID
@@ -20,4 +20,4 @@ Money = Decimal
 
 def utcnow() -> datetime:
     """Timezone-aware UTC now. Use this, never ``datetime.utcnow()``."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

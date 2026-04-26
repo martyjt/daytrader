@@ -14,16 +14,13 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-import numpy as np
-import polars as pl
-
-from ..algorithms.base import Algorithm
 from ..algorithms.registry import AlgorithmRegistry
 from ..core.context import AlgorithmContext, tenant_scope
 from ..core.pubsub import SignalEvent, signal_bus
@@ -42,7 +39,6 @@ from ..storage.models import (
     StrategyConfigModel,
 )
 from ..storage.repository import TenantRepository
-
 from .registry import ExecutionRegistry
 
 logger = logging.getLogger(__name__)
@@ -88,10 +84,8 @@ class TradingLoop:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
         logger.info("Trading loop stopped")
 

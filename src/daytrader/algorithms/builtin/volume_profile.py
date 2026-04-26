@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
 
 
 class VolumeProfileAlgorithm(Algorithm):
@@ -53,20 +53,20 @@ class VolumeProfileAlgorithm(Algorithm):
         return self._lookback
 
     def on_bar(self, ctx: AlgorithmContext) -> Signal | None:
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        closes = ctx.history_arrays.get("close")
-        volumes = ctx.history_arrays.get("volume")
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        closes = ctx.history_arrays["close"]
+        volumes = ctx.history_arrays["volume"]
         if closes is None or len(closes) < self._lookback:
             return None
 
         # Build volume profile over lookback window
         h = highs[-self._lookback :]
-        l = lows[-self._lookback :]
+        lo = lows[-self._lookback :]
         v = volumes[-self._lookback :]
 
         high_price = np.max(h)
-        low_price = np.min(l)
+        low_price = np.min(lo)
         if high_price <= low_price:
             return None
 
@@ -77,13 +77,13 @@ class VolumeProfileAlgorithm(Algorithm):
         ])
 
         for j in range(self._lookback):
-            candle_range = h[j] - l[j]
+            candle_range = h[j] - lo[j]
             if candle_range <= 0:
                 continue
             for b in range(self._price_bins):
                 b_low = low_price + bin_size * b
                 b_high = b_low + bin_size
-                overlap_low = max(l[j], b_low)
+                overlap_low = max(lo[j], b_low)
                 overlap_high = min(h[j], b_high)
                 if overlap_high > overlap_low:
                     ratio = (overlap_high - overlap_low) / candle_range

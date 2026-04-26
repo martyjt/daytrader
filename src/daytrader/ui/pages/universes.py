@@ -7,8 +7,6 @@ basket" and pull them into any multi-symbol workflow without re-typing.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from nicegui import ui
 
 from ..shell import page_layout
@@ -34,7 +32,7 @@ async def universes_page() -> None:
         universes_container.clear()
         try:
             rows = await list_universes()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             with universes_container:
                 ui.label(f"Failed to load universes: {exc}").classes("text-negative")
             return
@@ -102,7 +100,7 @@ async def universes_page() -> None:
                 symbols_in.value = ""
                 desc_in.value = ""
                 await _refresh()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 ui.notify(f"Save failed: {exc}", type="negative")
 
         ui.button(

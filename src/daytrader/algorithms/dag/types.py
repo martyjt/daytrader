@@ -60,7 +60,7 @@ class DAGDefinition:
     def leaf_nodes(self) -> list[DAGNode]:
         """Return nodes with no incoming edges (algorithm leaf nodes)."""
         targets = {e.target_id for e in self.edges}
-        sources = {e.source_id for e in self.edges}
+        {e.source_id for e in self.edges}
         # Leaves are nodes that are sources but never targets,
         # or nodes with no edges at all (isolated)
         leaf_ids = set()

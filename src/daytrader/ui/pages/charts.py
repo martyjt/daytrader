@@ -26,7 +26,6 @@ from nicegui import ui
 from ..components.dag_render import DagRenderNode, dag_to_mermaid
 from ..shell import page_layout
 
-
 # Bounded color palette for per-algorithm fallback "own" traces.
 _FALLBACK_COLORS = [
     "#5c7cfa", "#22b8cf", "#f76707", "#40c057",
@@ -93,13 +92,12 @@ async def charts_page() -> None:
                 )
             return
 
-        with render_area:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label(
-                    f"Fetching {symbol.value} and running "
-                    f"{len(algo_picker.value)} algorithm(s)…"
-                ).classes("text-grey-5")
+        with render_area, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label(
+                f"Fetching {symbol.value} and running "
+                f"{len(algo_picker.value)} algorithm(s)…"
+            ).classes("text-grey-5")
 
         try:
             from ..services_charts import run_charts_service
@@ -111,7 +109,7 @@ async def charts_page() -> None:
                 end_str=end_date.value,
                 algo_ids=list(algo_picker.value),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             render_area.clear()
             with render_area:
                 ui.icon("error", size="lg", color="negative")
@@ -166,7 +164,7 @@ def _render_summary(result) -> None:
 def _render_chart(result) -> None:
     """Build a single ECharts option with stacked grids and render it."""
     option = _build_echarts_option(result)
-    n_panes = 2 + len(result.algorithms) + 1  # price + volume + N algos + ribbon
+    2 + len(result.algorithms) + 1  # price + volume + N algos + ribbon
     # Give each pane breathing room; ribbon stays compact.
     height_px = 180 + 80 + 160 * len(result.algorithms) + 80 + 40
     ui.echart(option).classes("w-full").style(f"height: {height_px}px")
@@ -362,7 +360,7 @@ def _build_echarts_option(result) -> dict[str, Any]:
     })
 
     # Price-overlay traces from all algorithms
-    for algo_idx, algo in enumerate(result.algorithms):
+    for algo in result.algorithms:
         for trace in algo.traces:
             if trace.panel == "price":
                 series.extend(_trace_to_series(trace, grid_x_index=0, grid_y_index=0))

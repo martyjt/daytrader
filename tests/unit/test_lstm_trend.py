@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 import numpy as np
@@ -13,7 +14,7 @@ import pytest
 pytest.importorskip("torch")
 
 from daytrader.algorithms.builtin.lstm_trend import LSTMTrendAlgorithm
-from daytrader.algorithms.builtin.torch_base import build_dl_feature_matrix, N_FEATURES
+from daytrader.algorithms.builtin.torch_base import N_FEATURES, build_dl_feature_matrix
 from daytrader.algorithms.registry import AlgorithmRegistry
 from daytrader.backtest.engine import BacktestEngine
 from daytrader.core.context import AlgorithmContext
@@ -113,7 +114,7 @@ def test_on_bar_before_training_returns_none():
     lows = data["low"].to_numpy().astype(float)
     volumes = data["volume"].to_numpy().astype(float)
 
-    emitted = []
+    emitted: list[Any] = []
     ctx = AlgorithmContext(
         tenant_id=uuid4(),
         persona_id=uuid4(),
@@ -154,7 +155,7 @@ def test_on_bar_after_training_emits():
     lows = data["low"].to_numpy().astype(float)
     volumes = data["volume"].to_numpy().astype(float)
 
-    emitted = []
+    emitted: list[Any] = []
     logs = []
     ctx = AlgorithmContext(
         tenant_id=uuid4(),

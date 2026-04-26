@@ -178,19 +178,17 @@ async def strategy_lab_page(strategy: str | None = None) -> None:
                 return
             if snap.regime in suitable:
                 return
-            top_pct = int(round(snap.probabilities.get(snap.regime, 0.0) * 100))
-            with regime_warning:
-                with ui.card().classes("w-full q-pa-sm").style(
-                    "background-color: #3d2e00; border-left: 4px solid #f76707"
-                ):
-                    with ui.row().classes("items-center gap-2 no-wrap"):
-                        ui.icon("warning", color="warning")
-                        ui.label(
-                            f"Regime mismatch: market looks {snap.regime.upper()} "
-                            f"({top_pct}%) but this algorithm is designed for "
-                            f"{', '.join(r.upper() for r in suitable)}. "
-                            f"Expect reduced edge."
-                        ).classes("text-body2 text-warning")
+            top_pct = round(snap.probabilities.get(snap.regime, 0.0) * 100)
+            with regime_warning, ui.card().classes("w-full q-pa-sm").style(
+                "background-color: #3d2e00; border-left: 4px solid #f76707"
+            ), ui.row().classes("items-center gap-2 no-wrap"):
+                ui.icon("warning", color="warning")
+                ui.label(
+                    f"Regime mismatch: market looks {snap.regime.upper()} "
+                    f"({top_pct}%) but this algorithm is designed for "
+                    f"{', '.join(r.upper() for r in suitable)}. "
+                    f"Expect reduced edge."
+                ).classes("text-body2 text-warning")
 
         # ---- Dynamic parameter form -----------------------------------------
         param_container = ui.column().classes("w-full q-pt-xs")
@@ -241,12 +239,11 @@ async def strategy_lab_page(strategy: str | None = None) -> None:
         gates_area.clear()
         results.clear()
 
-        with results:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label(
-                    f"Fetching data and backtesting {symbol.value}..."
-                ).classes("text-grey-5")
+        with results, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label(
+                f"Fetching data and backtesting {symbol.value}..."
+            ).classes("text-grey-5")
 
         try:
             from ..services import run_backtest_service
@@ -292,10 +289,9 @@ async def strategy_lab_page(strategy: str | None = None) -> None:
             for warning in getattr(result, "warnings", []) or []:
                 with ui.card().classes("w-full q-pa-sm q-mb-sm").style(
                     "background-color: #3a2a1a; border-left: 4px solid #f76707"
-                ):
-                    with ui.row().classes("items-start gap-2 no-wrap"):
-                        ui.icon("warning", color="warning", size="md")
-                        ui.label(warning).classes("text-body2 text-grey-3")
+                ), ui.row().classes("items-start gap-2 no-wrap"):
+                    ui.icon("warning", color="warning", size="md")
+                    ui.label(warning).classes("text-body2 text-grey-3")
 
             # ---- KPI cards --------------------------------------------------
             net_ret = kpis.get("net_return_pct", 0)
@@ -349,14 +345,13 @@ async def strategy_lab_page(strategy: str | None = None) -> None:
             if atpd > 2:
                 with ui.card().classes("w-full q-pa-sm").style(
                     "background-color: #3d2e00"
-                ):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("warning", color="warning")
-                        ui.label(
-                            f"High trade frequency: {atpd:.1f} trades/day. "
-                            f"At {result.venue} fee rates, this strategy needs "
-                            f"significant daily alpha to overcome fee drag."
-                        ).classes("text-body2 text-warning")
+                ), ui.row().classes("items-center gap-2"):
+                    ui.icon("warning", color="warning")
+                    ui.label(
+                        f"High trade frequency: {atpd:.1f} trades/day. "
+                        f"At {result.venue} fee rates, this strategy needs "
+                        f"significant daily alpha to overcome fee drag."
+                    ).classes("text-body2 text-warning")
 
             # ---- Equity curve (ECharts) -------------------------------------
             eq = result.equity_curve
@@ -414,12 +409,11 @@ async def strategy_lab_page(strategy: str | None = None) -> None:
             return
 
         wf_results.clear()
-        with wf_results:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="lg")
-                ui.label("Running walk-forward analysis (5 folds)...").classes(
-                    "text-grey-5"
-                )
+        with wf_results, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="lg")
+            ui.label("Running walk-forward analysis (5 folds)...").classes(
+                "text-grey-5"
+            )
 
         try:
             from ..services import run_walk_forward_service
@@ -577,31 +571,28 @@ async def strategy_lab_page(strategy: str | None = None) -> None:
             if all_pass:
                 with ui.card().classes("w-full q-pa-sm").style(
                     "background-color: #1a3a1a"
-                ):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("verified", color="positive", size="md")
-                        ui.label(
-                            "All gates passed! This strategy is eligible "
-                            "for promotion to paper trading."
-                        ).classes("text-body1 text-positive")
+                ), ui.row().classes("items-center gap-2"):
+                    ui.icon("verified", color="positive", size="md")
+                    ui.label(
+                        "All gates passed! This strategy is eligible "
+                        "for promotion to paper trading."
+                    ).classes("text-body1 text-positive")
             else:
                 failed = []
                 for g in gate_results:
                     failed.extend(g.failed_checks)
                 with ui.card().classes("w-full q-pa-sm").style(
                     "background-color: #3a1a1a"
-                ):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("block", color="negative", size="md")
-                        ui.label(
-                            f"{len(failed)} gate(s) failed. Strategy does not "
-                            "qualify for promotion yet."
-                        ).classes("text-body1 text-negative")
+                ), ui.row().classes("items-center gap-2"):
+                    ui.icon("block", color="negative", size="md")
+                    ui.label(
+                        f"{len(failed)} gate(s) failed. Strategy does not "
+                        "qualify for promotion yet."
+                    ).classes("text-body1 text-negative")
 
             # Promote button (only when all pass)
             if all_pass:
                 async def _promote() -> None:
-                    from ..services import promote_to_paper
 
                     bt = _state["backtest_result"]
                     if bt:

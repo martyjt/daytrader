@@ -26,8 +26,8 @@ from daytrader.notifications import (
     notify_active,
     resolve_webhook_url,
     save_webhook_url,
-    set_active_notifier,
     send_test_message,
+    set_active_notifier,
 )
 from daytrader.notifications.service import _validate_webhook_url
 from daytrader.storage.models import AuditLogModel, TenantModel
@@ -455,8 +455,8 @@ async def test_record_error_pushes_notification(_clean_active_notifier, monkeypa
     # Build a minimally-initialised adapter — _record_error doesn't touch
     # anything besides _tenant_id, _algo_id, and the notifier.
     adapter = SandboxedAlgorithm.__new__(SandboxedAlgorithm)
-    adapter._tenant_id = TENANT_A  # type: ignore[attr-defined]
-    adapter._algo_id = "my_algo"  # type: ignore[attr-defined]
+    adapter._tenant_id = TENANT_A
+    adapter._algo_id = "my_algo"
 
     await adapter._record_error("KeyError: 'foo'")
 

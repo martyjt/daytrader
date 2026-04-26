@@ -5,7 +5,7 @@ conversion and schema normalization are the main things under test.
 """
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import polars as pl
@@ -74,7 +74,6 @@ def test_capabilities():
 async def test_fetch_ohlcv_returns_polars_df():
     """Full flow: mock yfinance, call fetch_ohlcv, verify Polars output."""
     import sys
-    from unittest.mock import MagicMock
 
     mock_yf = MagicMock()
     mock_ticker = MagicMock()
@@ -111,7 +110,6 @@ async def test_fetch_ohlcv_returns_polars_df():
 async def test_fetch_ohlcv_empty():
     """Empty result from yfinance returns an empty Polars DataFrame."""
     import sys
-    from unittest.mock import MagicMock
 
     mock_yf = MagicMock()
     mock_ticker = MagicMock()

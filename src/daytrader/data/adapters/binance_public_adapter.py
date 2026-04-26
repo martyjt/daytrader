@@ -96,7 +96,7 @@ class BinancePublicAdapter(DataAdapter):
             # Page through the range; each request returns up to 1000 bars.
             cursor_ms = start_ms
             while cursor_ms < end_ms:
-                params = {
+                params: dict[str, str | int] = {
                     "symbol": pair,
                     "interval": interval,
                     "startTime": cursor_ms,
@@ -148,5 +148,5 @@ class BinancePublicAdapter(DataAdapter):
                 latency_ms=round(elapsed, 1),
                 last_successful_call=utcnow(),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return AdapterHealth(status="down", error=str(exc))

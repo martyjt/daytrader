@@ -8,9 +8,9 @@ risk-adjusted basis.
 
 from __future__ import annotations
 
-from ..base import Algorithm, AlgorithmManifest
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
+from ..base import Algorithm, AlgorithmManifest
 
 
 class BuyHoldAlgorithm(Algorithm):

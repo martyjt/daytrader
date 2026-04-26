@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from daytrader.core.context import tenant_scope
 from daytrader.core.events.base import EventType
 from daytrader.core.types.orders import Order, OrderSide, OrderStatus, OrderType
 from daytrader.storage.models import JournalEntryModel, PersonaModel, TenantModel
-
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 PERSONA_ID = UUID("00000000-0000-0000-0000-000000000002")
@@ -133,7 +130,7 @@ async def test_log_order_filled(session, _patch_session):
         type=OrderType.MARKET,
         quantity=Decimal("0.5"),
         status=OrderStatus.FILLED,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         price=Decimal("50000"),
         filled_quantity=Decimal("0.5"),
         avg_fill_price=Decimal("49950"),

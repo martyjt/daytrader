@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-from .base import Algorithm, AlgorithmManifest, AlgorithmParam
+from .base import Algorithm, AlgorithmParam
 
 logger = logging.getLogger(__name__)
 

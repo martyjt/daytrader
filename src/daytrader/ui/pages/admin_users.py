@@ -5,19 +5,17 @@ Super-admin only. Cross-tenant view (a super admin can manage everyone).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from uuid import UUID
 
 from nicegui import ui
+from sqlalchemy import select
 
 from ...auth.invites import create_invite, list_pending_invites
-from ...auth.roles import ROLE_MEMBER, ROLE_OWNER, ROLE_SUPER_ADMIN, ROLES
+from ...auth.roles import ROLE_MEMBER, ROLE_SUPER_ADMIN, ROLES
 from ...auth.service import AuthError, list_users, set_active
 from ...auth.session import current_user_id
 from ...storage.database import get_session
 from ...storage.models import TenantModel
-from sqlalchemy import select
-
 from ..middleware import ensure_role
 from ..shell import page_layout
 
@@ -90,13 +88,16 @@ async def admin_users_page() -> None:
                                 f"expires {inv.expires_at:%Y-%m-%d %H:%M}"
                             ).classes("text-caption text-grey-6")
                             invite_url = _invite_url(inv.token)
-                            ui.button(
-                                "Copy link",
-                                on_click=lambda url=invite_url: ui.run_javascript(
+                            def _copy_invite(url: str = invite_url) -> None:
+                                ui.run_javascript(
                                     f"navigator.clipboard.writeText({url!r}); "
                                     f"window._copied=true"
-                                ) and ui.notify("Invite link copied"),
-                            ).props("flat dense")
+                                )
+                                ui.notify("Invite link copied")
+
+                            ui.button("Copy link", on_click=_copy_invite).props(
+                                "flat dense"
+                            )
 
     async def _open_invite_dialog() -> None:
         dlg = ui.dialog()

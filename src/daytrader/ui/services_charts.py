@@ -162,13 +162,14 @@ def _run_sync(
         params = algo.manifest.param_defaults()
         params.update(algo_params.get(algo_id, {}))
 
+        err: str | None
         try:
             traces = algo.visualize(VisualizeContext(
                 opens=opens, highs=highs, lows=lows,
                 closes=closes, volumes=volumes,
                 params=params,
             )) or []
-        except Exception as exc:  # noqa: BLE001 — visualize is untrusted plugin code
+        except Exception as exc:
             traces = []
             err = f"visualize() failed: {exc}"
         else:
@@ -225,7 +226,7 @@ def _snapshot_dag_nodes(
     signal's attribution tree (flattened). Nodes that never contributed
     show ``None``.
     """
-    dag = composite._dag  # noqa: SLF001 — internal but stable
+    dag = composite._dag
 
     # Flatten the most recent attribution tree into a dict by node_id.
     latest_by_node: dict[str, tuple[float, float]] = {}
@@ -336,7 +337,7 @@ def _replay_on_bar(
         )
         try:
             algorithm.on_bar(ctx)
-        except Exception:  # noqa: BLE001 — replay shouldn't propagate plugin errors
+        except Exception:
             directions[i] = current_direction
             continue
 

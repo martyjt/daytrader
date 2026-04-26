@@ -73,7 +73,8 @@ class AlpacaExecutor(ExecutionAdapter):
     def _submit_sync(self, order: Order) -> Any:
         """Synchronous order submission (runs in thread)."""
         from alpaca.trading.client import TradingClient
-        from alpaca.trading.enums import OrderSide as AlpacaSide, TimeInForce
+        from alpaca.trading.enums import OrderSide as AlpacaSide
+        from alpaca.trading.enums import TimeInForce
         from alpaca.trading.requests import (
             LimitOrderRequest,
             MarketOrderRequest,
@@ -85,6 +86,7 @@ class AlpacaExecutor(ExecutionAdapter):
         ticker = self.to_alpaca_ticker(order.symbol_key)
         side = AlpacaSide.BUY if order.side == OrderSide.BUY else AlpacaSide.SELL
 
+        request: Any
         if order.type == OrderType.MARKET:
             request = MarketOrderRequest(
                 symbol=ticker,
@@ -155,7 +157,11 @@ class AlpacaExecutor(ExecutionAdapter):
         from alpaca.trading.client import TradingClient
 
         client = TradingClient(self._api_key, self._api_secret, paper=self._paper)
-        return client.get_all_positions()
+        result = client.get_all_positions()
+        # alpaca-py types this as `list[Position] | dict[str, Any]` (the
+        # raw dict variant is reserved for unimplemented response paths
+        # we don't trigger). Coerce to list.
+        return result if isinstance(result, list) else []
 
     async def get_balance(self, persona_id: UUID) -> Decimal:
         try:
@@ -167,9 +173,12 @@ class AlpacaExecutor(ExecutionAdapter):
 
     def _get_balance_sync(self) -> Decimal:
         from alpaca.trading.client import TradingClient
+        from alpaca.trading.models import TradeAccount
 
         client = TradingClient(self._api_key, self._api_secret, paper=self._paper)
         account = client.get_account()
+        if not isinstance(account, TradeAccount):
+            return Decimal(0)
         return Decimal(str(account.cash))
 
     @staticmethod

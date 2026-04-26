@@ -16,6 +16,7 @@ promotion decision has an auditable history.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -86,7 +87,6 @@ async def run_shadow_tournament(
     is the fraction of folds the candidate won. ``beat_primary`` requires
     BOTH higher aggregate Sharpe AND ≥50% stability.
     """
-    from datetime import datetime as _dt
 
     from ..algorithms.registry import AlgorithmRegistry
     from ..backtest.risk import RiskConfig
@@ -153,7 +153,7 @@ async def run_shadow_tournament(
                 venue=venue,
                 risk_config=risk_config,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             candidates_raw.append((aid, exc))
             continue
         candidates_raw.append((aid, wf))
@@ -172,10 +172,8 @@ async def run_shadow_tournament(
     # Score each candidate against the primary baseline.
     for aid, result in candidates_raw:
         algo_name = aid
-        try:
+        with contextlib.suppress(Exception):
             algo_name = AlgorithmRegistry.get(aid, tenant_id=tenant_id).manifest.name
-        except Exception:
-            pass
         is_primary = aid == primary_algo_id
         if isinstance(result, Exception):
             report.candidates.append(ShadowCandidate(
@@ -192,7 +190,7 @@ async def run_shadow_tournament(
             stability = 1.0 if is_primary else 0.0
         else:
             # Fraction of matched folds where candidate beat the primary.
-            pairs = list(zip(cand_folds, primary_per_fold_sharpe))
+            pairs = list(zip(cand_folds, primary_per_fold_sharpe, strict=False))
             if not pairs:
                 stability = 0.0
             else:
@@ -438,7 +436,7 @@ async def run_basket_tournament(
         if is_primary or not primary_per_symbol_sharpe:
             stability = 1.0 if is_primary else 0.0
         else:
-            pairs = list(zip([c.sharpe for c in valid], primary_per_symbol_sharpe))
+            pairs = list(zip([c.sharpe for c in valid], primary_per_symbol_sharpe, strict=False))
             stability = (
                 sum(1 for c, p in pairs if c > p) / len(pairs) if pairs else 0.0
             )

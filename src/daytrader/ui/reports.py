@@ -91,7 +91,7 @@ def regime_to_markdown(snapshot) -> str:
     if snapshot.status != "ok":
         return f"**Regime**: _{snapshot.status}_ ({snapshot.message or '—'})"
     probs = ", ".join(
-        f"{k}: {int(round(v * 100))}%"
+        f"{k}: {round(v * 100)}%"
         for k, v in snapshot.probabilities.items()
     )
     return (

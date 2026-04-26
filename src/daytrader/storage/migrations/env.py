@@ -8,8 +8,8 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from daytrader.storage.database import Base
 from daytrader.storage import models as _models  # noqa: F401 — side-effect import
+from daytrader.storage.database import Base
 
 config = context.config
 if config.config_file_name is not None:
@@ -36,17 +36,17 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection) -> None:  # type: ignore[no-untyped-def]
+def do_run_migrations(connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
 
 
 async def run_migrations_online() -> None:
-    connectable = create_async_engine(
-        config.get_main_option("sqlalchemy.url"),
-        poolclass=pool.NullPool,
-    )
+    url = config.get_main_option("sqlalchemy.url")
+    if url is None:
+        raise RuntimeError("alembic.ini is missing sqlalchemy.url")
+    connectable = create_async_engine(url, poolclass=pool.NullPool)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

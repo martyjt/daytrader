@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -15,7 +15,7 @@ def _make_context() -> tuple[AlgorithmContext, list]:
     logs: list = []
 
     bar = Bar(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         open=Decimal("100"),
         high=Decimal("101"),
         low=Decimal("99"),
@@ -28,7 +28,7 @@ def _make_context() -> tuple[AlgorithmContext, list]:
         algorithm_id="test_algo",
         symbol=Symbol("BTC", "USDT", AssetClass.CRYPTO, "binance"),
         timeframe=Timeframe.H1,
-        now=datetime.now(timezone.utc),
+        now=datetime.now(UTC),
         bar=bar,
         history_arrays={"close": np.array([99.0, 100.0, 100.5])},
         features={"rsi_14": 55.3, "ema_fast": 100.2},

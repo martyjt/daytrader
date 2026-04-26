@@ -7,11 +7,11 @@ attribution extraction, and walk-forward stability metrics.
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
-from .services import run_backtest_service, run_walk_forward_service
-
+from .services import run_backtest_service
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -99,7 +99,7 @@ def expand_param_grid(param_ranges: dict[str, dict[str, Any]]) -> list[dict[str,
 
     points = []
     for combo in itertools.product(*value_lists):
-        points.append(dict(zip(names, combo)))
+        points.append(dict(zip(names, combo, strict=False)))
     return points
 
 

@@ -7,12 +7,11 @@ pages call ``is_authenticated()`` / ``current_session()`` for UI gating.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 from uuid import UUID
 
 from nicegui import app
-
 
 _USER_KEY = "user_id"
 _TENANT_KEY = "tenant_id"

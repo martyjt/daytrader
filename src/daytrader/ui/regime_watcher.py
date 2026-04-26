@@ -10,6 +10,7 @@ Scheduled via APScheduler; interval is configurable in AppSettings
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -70,10 +71,8 @@ class RegimeWatcher:
 
     async def stop(self) -> None:
         if self._scheduler is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._scheduler.shutdown(wait=False)
-            except Exception:  # noqa: BLE001
-                pass
             self._scheduler = None
 
     async def _tick(self) -> None:
@@ -86,7 +85,7 @@ class RegimeWatcher:
                 timeframe_str=self._timeframe,
                 force_refresh=True,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("regime watcher tick failed: %s", exc)
             return
 

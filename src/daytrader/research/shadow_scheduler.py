@@ -16,6 +16,7 @@ user turning it on.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -92,10 +93,8 @@ class ShadowScheduler:
 
     async def stop(self) -> None:
         if self._scheduler is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._scheduler.shutdown(wait=False)
-            except Exception:  # noqa: BLE001
-                pass
             self._scheduler = None
 
     async def run_now(self) -> Any:
@@ -117,7 +116,7 @@ class ShadowScheduler:
                 end=end,
                 n_folds=self._n_folds,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("Shadow tick failed: %s", exc)
             return None
         self._last_run = datetime.utcnow()

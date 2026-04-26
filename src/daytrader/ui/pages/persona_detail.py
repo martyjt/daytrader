@@ -105,7 +105,7 @@ async def persona_detail_page(persona_id: str) -> None:
     ui.label("Recent activity").classes("text-h6 q-pb-xs")
     try:
         entries = await list_journal_entries(persona_id=pid, limit=30)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         ui.label(f"Failed to load journal: {exc}").classes("text-negative")
         entries = []
 

@@ -7,7 +7,7 @@ invites; ``redeem_invite`` consumes one and creates the user account.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -28,11 +28,11 @@ def _new_token() -> str:
 
 def _as_utc(dt: datetime) -> datetime:
     """SQLite returns naive datetimes; treat them as UTC for comparisons."""
-    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 def is_expired(invite: Any) -> bool:
-    return _as_utc(invite.expires_at) < datetime.now(timezone.utc)
+    return _as_utc(invite.expires_at) < datetime.now(UTC)
 
 
 async def create_invite(
@@ -56,7 +56,7 @@ async def create_invite(
             role=role,
             tenant_id=tenant_id,
             invited_by=invited_by,
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=ttl),
+            expires_at=datetime.now(UTC) + timedelta(hours=ttl),
         )
         session.add(invite)
         await session.commit()
@@ -142,7 +142,7 @@ async def redeem_invite(
         session.add(user)
         await session.flush()
 
-        invite.used_at = datetime.now(timezone.utc)
+        invite.used_at = datetime.now(UTC)
         await session.commit()
         new_user_id = user.id
         new_tenant_id = tenant_id

@@ -19,11 +19,13 @@ import torch
 import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
 
-from ..base import Algorithm, AlgorithmManifest
-from ..indicators import atr as _compute_atr, ema as _compute_ema, rsi as _compute_rsi, stochastic as _compute_stochastic
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
-
+from ..base import Algorithm
+from ..indicators import atr as _compute_atr
+from ..indicators import ema as _compute_ema
+from ..indicators import rsi as _compute_rsi
+from ..indicators import stochastic as _compute_stochastic
 
 _DL_FEATURE_NAMES = [
     "log_return",
@@ -185,7 +187,7 @@ class TorchBaseAlgorithm(Algorithm):
         labels = self._build_labels(closes)
         X, y = self._build_sequences(features, labels)
 
-        if X is None or len(X) < 30:
+        if X is None or y is None or len(X) < 30:
             return
 
         self._train_model(X, y)
@@ -273,13 +275,12 @@ class TorchBaseAlgorithm(Algorithm):
         best_state = None
         patience_counter = 0
 
-        for epoch in range(self._epochs):
+        for _epoch in range(self._epochs):
             self._model.train()
 
             # Mini-batch training
             indices = torch.randperm(len(X_train))
             epoch_loss = 0.0
-            n_batches = 0
 
             for start in range(0, len(X_train), self._batch_size):
                 batch_idx = indices[start : start + self._batch_size]
@@ -292,7 +293,6 @@ class TorchBaseAlgorithm(Algorithm):
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
-                n_batches += 1
 
             # Validation and early stopping
             if has_val:
@@ -334,6 +334,8 @@ class TorchBaseAlgorithm(Algorithm):
         if seq is None:
             return None
 
+        # _is_trained ⇒ _model is set
+        assert self._model is not None
         self._model.eval()
         with torch.no_grad():
             input_tensor = torch.tensor(seq, dtype=torch.float32).unsqueeze(0).to(self._device)
@@ -361,13 +363,13 @@ class TorchBaseAlgorithm(Algorithm):
 
     def _extract_latest_sequence(self, ctx: AlgorithmContext) -> np.ndarray | None:
         """Extract the most recent (seq_len, n_features) window from history."""
-        closes = ctx.history_arrays.get("close")
-        opens = ctx.history_arrays.get("open")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        opens = ctx.history_arrays["open"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
-        if closes is None or len(closes) < self._lookback:
+        if len(closes) < self._lookback:
             return None
 
         features = build_dl_feature_matrix(closes, opens, highs, lows, volumes)
@@ -388,13 +390,13 @@ class TorchBaseAlgorithm(Algorithm):
 
     def _auto_train_from_context(self, ctx: AlgorithmContext) -> None:
         """Auto-train on the first half of available history."""
-        closes = ctx.history_arrays.get("close")
-        opens = ctx.history_arrays.get("open")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        opens = ctx.history_arrays["open"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
-        if closes is None or len(closes) < self._lookback * 2:
+        if len(closes) < self._lookback * 2:
             return
 
         half = len(closes) // 2
@@ -404,7 +406,7 @@ class TorchBaseAlgorithm(Algorithm):
         labels = self._build_labels(closes[:half])
         X, y = self._build_sequences(features, labels)
 
-        if X is None or len(X) < 30:
+        if X is None or y is None or len(X) < 30:
             return
 
         self._train_model(X, y)
@@ -415,7 +417,7 @@ class TorchBaseAlgorithm(Algorithm):
 
     def save_checkpoint(self) -> dict[str, Any]:
         """Serialize model + scaler state for persistence."""
-        if not self._is_trained or self._model is None:
+        if not self._is_trained or self._model is None or self._scaler is None:
             raise RuntimeError("Cannot save checkpoint: model not trained")
         return {
             "model_state_dict": {

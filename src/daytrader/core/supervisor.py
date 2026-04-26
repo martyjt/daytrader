@@ -15,9 +15,10 @@ Concrete subclasses define:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -67,10 +68,8 @@ class BackgroundSupervisor(ABC):
         self._stopped.set()
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
 
         for tid, worker in list(self._workers.items()):
@@ -88,7 +87,7 @@ class BackgroundSupervisor(ABC):
                     self._stopped.wait(), timeout=self._poll_seconds
                 )
                 return  # stop requested
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             try:
                 await self._refresh()
@@ -122,9 +121,9 @@ class BackgroundSupervisor(ABC):
                     )
 
             for tid in to_stop:
-                worker = self._workers.pop(tid, None)
-                if worker is None:
+                if tid not in self._workers:
                     continue
+                worker = self._workers.pop(tid)
                 try:
                     await worker.stop()
                     logger.info("%s: stopped worker for tenant %s", self.name, tid)

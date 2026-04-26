@@ -12,13 +12,13 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     Numeric,
     String,
     Text,
@@ -28,7 +28,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from .database import Base
-
 
 # ---------------------------------------------------------------------------
 # Mixin

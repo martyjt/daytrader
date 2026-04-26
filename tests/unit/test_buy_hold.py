@@ -1,6 +1,6 @@
 """Tests for the Buy & Hold built-in algorithm."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -21,9 +21,9 @@ def _make_ctx() -> tuple[AlgorithmContext, list]:
             algorithm_id="buy_hold",
             symbol=Symbol("BTC", "USD", AssetClass.CRYPTO),
             timeframe=Timeframe.D1,
-            now=datetime.now(timezone.utc),
+            now=datetime.now(UTC),
             bar=Bar(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 open=Decimal("100"),
                 high=Decimal("101"),
                 low=Decimal("99"),

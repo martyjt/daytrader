@@ -22,13 +22,12 @@ async def strategies_page() -> None:
         return
 
     from ...algorithms.registry import AlgorithmRegistry
+    from ...auth.session import current_tenant_id
     from ..services import (
         delete_strategy_config,
         list_strategies,
         save_strategy_config,
     )
-
-    from ...auth.session import current_tenant_id
     _tid = current_tenant_id()
     algo_ids = AlgorithmRegistry.available(tenant_id=_tid)
     algo_labels = {
@@ -47,7 +46,7 @@ async def strategies_page() -> None:
         container.clear()
         try:
             rows = await list_strategies()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             with container:
                 ui.label(f"Failed to load: {exc}").classes("text-negative")
             return
@@ -170,7 +169,7 @@ async def strategies_page() -> None:
                 tags_in.value = ""
                 desc_in.value = ""
                 await _refresh()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 ui.notify(f"Save failed: {exc}", type="negative")
 
         ui.button("Save strategy", icon="save", on_click=_save).props(

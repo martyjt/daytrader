@@ -28,6 +28,7 @@ Design notes:
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -202,7 +203,7 @@ def feature_lift(
     )
 
 
-def benjamini_hochberg(p_values: list[float | None], alpha: float = 0.1) -> list[bool]:
+def benjamini_hochberg(p_values: Sequence[float | None], alpha: float = 0.1) -> list[bool]:
     """Benjamini-Hochberg FDR correction.
 
     Returns a list of booleans (same length as input): True for p-values
@@ -234,7 +235,7 @@ def benjamini_hochberg(p_values: list[float | None], alpha: float = 0.1) -> list
     return rejected
 
 
-def q_values(p_values: list[float | None]) -> list[float | None]:
+def q_values(p_values: Sequence[float | None]) -> list[float | None]:
     """Compute BH-adjusted q-values (step-up monotone correction).
 
     For each p(i) in ascending order the q-value is ``min(p(j) * m/j)`` for
@@ -257,6 +258,6 @@ def q_values(p_values: list[float | None]) -> list[float | None]:
         q_sorted.insert(0, q)
 
     out: list[float | None] = [None] * m
-    for q, (orig_idx, _p) in zip(q_sorted, indexed):
+    for q, (orig_idx, _p) in zip(q_sorted, indexed, strict=False):
         out[orig_idx] = float(min(1.0, max(0.0, q)))
     return out

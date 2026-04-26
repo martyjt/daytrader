@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
@@ -11,11 +11,10 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-import daytrader.storage.database as database
 from daytrader.algorithms.builtin.feature_threshold import (
     FeatureThresholdAlgorithm,
 )
-from daytrader.core.context import AlgorithmContext, tenant_scope
+from daytrader.core.context import AlgorithmContext
 from daytrader.core.types.bars import Bar, Timeframe
 from daytrader.core.types.symbols import Symbol
 from daytrader.research.feature_hydration import (
@@ -31,7 +30,6 @@ from daytrader.storage.models import (
     StrategyConfigModel,
     TenantModel,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -236,9 +234,9 @@ def _ctx_with_features(features: dict[str, float], params: dict) -> AlgorithmCon
         algorithm_id="feature_threshold",
         symbol=Symbol.parse("BTC/USDT"),
         timeframe=Timeframe.D1,
-        now=datetime(2026, 4, 25, tzinfo=timezone.utc),
+        now=datetime(2026, 4, 25, tzinfo=UTC),
         bar=Bar(
-            timestamp=datetime(2026, 4, 25, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 25, tzinfo=UTC),
             open=1, high=1, low=1, close=1, volume=1,
         ),
         history_arrays={},
@@ -251,7 +249,7 @@ def _ctx_with_features(features: dict[str, float], params: dict) -> AlgorithmCon
 
 def test_feature_threshold_emits_long_above_upper():
     algo = FeatureThresholdAlgorithm()
-    ctx, emitted = _ctx_with_features(
+    ctx, _emitted = _ctx_with_features(
         features={"fred:DGS10": 0.05},
         params={"feature_name": "fred:DGS10", "upper_threshold": 0.0,
                 "lower_threshold": -0.05, "direction": "both"},
@@ -264,7 +262,7 @@ def test_feature_threshold_emits_long_above_upper():
 
 def test_feature_threshold_emits_short_below_lower():
     algo = FeatureThresholdAlgorithm()
-    ctx, emitted = _ctx_with_features(
+    ctx, _emitted = _ctx_with_features(
         features={"x": -0.5},
         params={"feature_name": "x", "upper_threshold": 0.1,
                 "lower_threshold": -0.1, "direction": "both"},
@@ -276,7 +274,7 @@ def test_feature_threshold_emits_short_below_lower():
 
 def test_feature_threshold_long_only_blocks_short():
     algo = FeatureThresholdAlgorithm()
-    ctx, emitted = _ctx_with_features(
+    ctx, _emitted = _ctx_with_features(
         features={"x": -0.5},
         params={"feature_name": "x", "upper_threshold": 0.1,
                 "lower_threshold": -0.1, "direction": "long_only"},
@@ -386,8 +384,8 @@ async def test_hydrator_returns_latest_fred_value():
     fake_adapter = AsyncMock()
     fake_adapter.fetch_series.return_value = pl.DataFrame({
         "timestamp": [
-            datetime(2026, 4, 23, tzinfo=timezone.utc),
-            datetime(2026, 4, 24, tzinfo=timezone.utc),
+            datetime(2026, 4, 23, tzinfo=UTC),
+            datetime(2026, 4, 24, tzinfo=UTC),
         ],
         "value": [4.10, 4.25],
     })
@@ -409,7 +407,7 @@ async def test_hydrator_caches_repeat_calls():
     hydrator = FeatureHydrator(ttl_seconds=60.0)
     fake_adapter = AsyncMock()
     fake_adapter.fetch_series.return_value = pl.DataFrame({
-        "timestamp": [datetime(2026, 4, 24, tzinfo=timezone.utc)],
+        "timestamp": [datetime(2026, 4, 24, tzinfo=UTC)],
         "value": [3.5],
     })
 
@@ -434,15 +432,15 @@ async def test_hydrator_sentiment_averages_event_scores():
     hydrator = FeatureHydrator()
     events = [
         NewsEvent(
-            timestamp=datetime(2026, 4, 24, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 24, tzinfo=UTC),
             source="x", title="t1", sentiment_score=0.4,
         ),
         NewsEvent(
-            timestamp=datetime(2026, 4, 24, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 24, tzinfo=UTC),
             source="x", title="t2", sentiment_score=0.6,
         ),
         NewsEvent(
-            timestamp=datetime(2026, 4, 24, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 24, tzinfo=UTC),
             source="x", title="t3", sentiment_score=None,  # ignored
         ),
     ]
@@ -470,7 +468,7 @@ async def test_hydrator_sentiment_returns_none_when_no_scored_events():
     fake_adapter = AsyncMock()
     fake_adapter.fetch_news.return_value = [
         NewsEvent(
-            timestamp=datetime(2026, 4, 24, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 24, tzinfo=UTC),
             source="x", title="t", sentiment_score=None,
         ),
     ]

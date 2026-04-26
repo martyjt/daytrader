@@ -60,10 +60,9 @@ async def risk_center_page() -> None:
         from ..services_brokers import live_broker_balances
 
         balances_container.clear()
-        with balances_container:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="sm")
-                ui.label("Fetching balances…").classes("text-caption text-grey-5")
+        with balances_container, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="sm")
+            ui.label("Fetching balances…").classes("text-caption text-grey-5")
 
         rows = await live_broker_balances()
         balances_container.clear()
@@ -159,17 +158,16 @@ async def risk_center_page() -> None:
 
     async def _run_correlation_scan() -> None:
         corr_container.clear()
-        with corr_container:
-            with ui.row().classes("items-center gap-2"):
-                ui.spinner(size="md")
-                ui.label(
-                    "Scanning cross-persona signal correlation (72h window)..."
-                ).classes("text-grey-5")
+        with corr_container, ui.row().classes("items-center gap-2"):
+            ui.spinner(size="md")
+            ui.label(
+                "Scanning cross-persona signal correlation (72h window)..."
+            ).classes("text-grey-5")
         try:
             from ..services import run_correlation_scan_service
 
             report = await run_correlation_scan_service()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             corr_container.clear()
             with corr_container:
                 ui.label(f"Correlation scan failed: {exc}").classes(

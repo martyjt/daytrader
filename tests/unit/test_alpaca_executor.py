@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
-
-import pytest
 
 from daytrader.core.types.orders import Order, OrderSide, OrderStatus, OrderType
 from daytrader.execution.alpaca import AlpacaExecutor, _map_alpaca_status
-
 
 # ---------------------------------------------------------------------------
 # Ticker conversion
@@ -78,7 +75,7 @@ def _make_order(
         type=order_type,
         quantity=quantity,
         status=OrderStatus.PENDING,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         price=price,
     )
 

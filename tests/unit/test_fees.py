@@ -3,11 +3,10 @@
 import pytest
 
 from daytrader.backtest.fees import (
+    VENUE_PROFILES,
     FeeModel,
     FeeSchedule,
-    VENUE_PROFILES,
 )
-
 
 # ---- FeeSchedule ---------------------------------------------------------
 

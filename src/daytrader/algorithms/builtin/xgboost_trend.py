@@ -18,17 +18,14 @@ Labels:
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 import polars as pl
 import xgboost as xgb
 
-from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
-from ..indicators import rsi as _compute_rsi
 from ...core.context import AlgorithmContext
 from ...core.types.signals import Signal
-
+from ..base import Algorithm, AlgorithmManifest, AlgorithmParam
+from ..indicators import rsi as _compute_rsi
 
 _FEATURE_NAMES = [
     "returns_5",
@@ -182,11 +179,13 @@ class XGBoostTrendAlgorithm(Algorithm):
         if features is None:
             return None
 
+        # _is_trained ⇒ _model is set; assert pins it for mypy.
+        assert self._model is not None
         proba = self._model.predict_proba(features.reshape(1, -1))[0]
         up_prob = float(proba[1]) if len(proba) > 1 else float(proba[0])
 
         # Log feature importance for explainability
-        importance = dict(zip(_FEATURE_NAMES, self._model.feature_importances_))
+        importance = dict(zip(_FEATURE_NAMES, self._model.feature_importances_, strict=False))
         ctx.log("xgboost_prediction", up_probability=up_prob, **importance)
 
         # Not confident enough — skip
@@ -235,28 +234,28 @@ class XGBoostTrendAlgorithm(Algorithm):
         self, ctx: AlgorithmContext
     ) -> np.ndarray | None:
         """Extract feature vector for the current bar from history arrays."""
-        closes = ctx.history_arrays.get("close")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
-        if closes is None or len(closes) < self._lookback:
+        if len(closes) < self._lookback:
             return None
 
         features = _build_feature_matrix(closes, highs, lows, volumes)
-        row = features[-1]
+        row: np.ndarray = features[-1]
         if np.isnan(row).any():
             return None
         return row
 
     def _auto_train_from_context(self, ctx: AlgorithmContext) -> None:
         """Auto-train on the first half of available history."""
-        closes = ctx.history_arrays.get("close")
-        highs = ctx.history_arrays.get("high")
-        lows = ctx.history_arrays.get("low")
-        volumes = ctx.history_arrays.get("volume")
+        closes = ctx.history_arrays["close"]
+        highs = ctx.history_arrays["high"]
+        lows = ctx.history_arrays["low"]
+        volumes = ctx.history_arrays["volume"]
 
-        if closes is None or len(closes) < self._lookback * 2:
+        if len(closes) < self._lookback * 2:
             return
 
         # Train on first half

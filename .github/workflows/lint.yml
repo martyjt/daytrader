@@ -1,0 +1,53 @@
+name: Lint and typecheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install ruff
+        # Pin via the dev extras so the version matches local dev. Avoids
+        # the "passes locally, fails CI" trap caused by ruff bumping rules.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run ruff
+        run: ruff check src/ tests/
+
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install with dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run mypy on src
+        # Tests aren't typechecked: they lean heavily on mocks and test
+        # doubles whose types fight strict-mode for little real-bug payoff.
+        # Pytest still runs them, so behaviour is covered.
+        run: mypy src/daytrader/
