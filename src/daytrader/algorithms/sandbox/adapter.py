@@ -145,11 +145,15 @@ class SandboxedAlgorithm(Algorithm):
         return exc.error_type == "PluginError" and "not loaded" in exc.error_message
 
     async def _record_error(self, message: str) -> None:
-        """Persist the plugin's last error to the DB row, best-effort.
+        """Persist the plugin's last error to the DB row + push a notification.
 
         Late-imported to avoid the adapter ↔ installer module cycle. DB
         write failures are swallowed — operational visibility is nice to
-        have but mustn't bring the adapter down.
+        have but mustn't bring the adapter down. The notification fires
+        through the active :class:`Notifier` (a throttled Slack notifier
+        in production, a no-op in tests) so a friend whose plugin breaks
+        hears about it within minutes; the Phase 11 throttle dedupes
+        repeated failures of the same plugin into a single alert.
         """
         try:
             from .installer import record_plugin_error
@@ -160,6 +164,16 @@ class SandboxedAlgorithm(Algorithm):
             )
         except Exception:  # pragma: no cover — defensive
             logger.exception("Failed to record plugin error for %s", self._algo_id)
+
+        try:
+            from ...notifications import notify_active
+            await notify_active(
+                self._tenant_id,
+                f"Plugin {self._algo_id} crashed: {message}",
+                dedupe_key=f"plugin_error:{self._algo_id}",
+            )
+        except Exception:  # pragma: no cover — defensive
+            logger.exception("Failed to notify plugin error for %s", self._algo_id)
 
     async def on_bar_async(self, ctx: AlgorithmContext) -> Signal | None:
         """Run one bar in the worker. Pushes captured signals to ctx.emit_fn."""

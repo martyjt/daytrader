@@ -55,6 +55,12 @@ class TenantModel(Base):
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), unique=True)
     background_workers_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Phase 11: Slack incoming-webhook URL (Fernet-encrypted JSON-less string).
+    # Null/empty means "no notifications wired up"; the SlackNotifier silently
+    # drops in that case.
+    notification_webhook_url: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

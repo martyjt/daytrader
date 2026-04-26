@@ -8,6 +8,14 @@ from nicegui import app, ui
 from sqlalchemy import func, select, update
 
 from ...auth.roles import ROLE_SUPER_ADMIN
+from ...notifications import (
+    WebhookError,
+    clear_webhook_url,
+    has_webhook,
+    resolve_webhook_url,
+    save_webhook_url,
+    send_test_message,
+)
 from ...storage.database import get_session
 from ...storage.models import PersonaModel, TenantModel, UserModel
 from ..middleware import ensure_role
@@ -63,6 +71,9 @@ async def admin_tenants_page() -> None:
                     with ui.row().classes("col-3 gap-1"):
                         await _toggle_button(row, refresh)
                         await _kill_plugins_button(row, refresh, plugin_running)
+                with ui.row().classes("w-full q-px-sm q-py-xs"):
+                    await _notification_row(row, refresh)
+                ui.separator()
 
     await refresh()
 
@@ -172,3 +183,62 @@ async def _kill_plugins_button(row: dict, refresh, plugin_running: bool) -> None
     btn = ui.button("Kill plugins", on_click=_kill).props("flat dense color=negative")
     if not plugin_running:
         btn.disable()
+
+
+async def _notification_row(row: dict, refresh) -> None:
+    """Inline editor for the tenant's Slack webhook URL + Test/Save/Clear."""
+    tenant_id = row["id"]
+    current_url = await resolve_webhook_url(tenant_id) or ""
+    has_url = await has_webhook(tenant_id)
+
+    with ui.row().classes("w-full items-center gap-2"):
+        ui.label("Notification webhook").classes(
+            "col-2 text-caption text-grey-6"
+        )
+        url_input = ui.input(
+            placeholder="https://hooks.slack.com/services/...",
+            value=current_url,
+        ).classes("col-5").props("dense outlined")
+        if has_url:
+            ui.badge("configured", color="positive").classes("q-mr-sm")
+        else:
+            ui.badge("none", color="grey-6").classes("q-mr-sm")
+
+        async def _save() -> None:
+            try:
+                await save_webhook_url(tenant_id, url_input.value or "")
+            except WebhookError as exc:
+                ui.notify(f"{row['name']}: {exc}", type="negative")
+                return
+            ui.notify(f"{row['name']}: webhook saved", type="positive")
+            await refresh()
+
+        async def _test() -> None:
+            url = (url_input.value or "").strip()
+            if not url:
+                ui.notify(
+                    f"{row['name']}: paste a URL first", type="warning"
+                )
+                return
+            try:
+                await send_test_message(url)
+            except WebhookError as exc:
+                ui.notify(f"{row['name']}: {exc}", type="negative")
+                return
+            ui.notify(
+                f"{row['name']}: test message sent", type="positive"
+            )
+
+        async def _clear() -> None:
+            await clear_webhook_url(tenant_id)
+            url_input.value = ""
+            ui.notify(f"{row['name']}: webhook cleared", type="warning")
+            await refresh()
+
+        ui.button("Save", on_click=_save).props("flat dense color=primary")
+        ui.button("Test", on_click=_test).props("flat dense color=secondary")
+        clear_btn = ui.button("Clear", on_click=_clear).props(
+            "flat dense color=negative"
+        )
+        if not has_url:
+            clear_btn.disable()

@@ -77,6 +77,19 @@ async def _startup() -> None:
     set_active_bus(market_data_bus)
     app.state.market_data_bus = market_data_bus
 
+    # Phase 11 — install the tenant notifier. Slack-on-throttle by default;
+    # tests / scripts that don't go through this startup get the no-op via
+    # ``get_active_notifier() is None``.
+    from ..notifications import (
+        SlackNotifier,
+        ThrottledNotifier,
+        set_active_notifier,
+    )
+
+    notifier = ThrottledNotifier(SlackNotifier())
+    set_active_notifier(notifier)
+    app.state.notifier = notifier
+
     # Initialise the journal writer, kill switch, and global risk monitor.
     from ..journal.writer import JournalWriter
     from ..execution.kill_switch import init_kill_switch
@@ -150,6 +163,11 @@ async def _shutdown() -> None:
     from ..data.marketdata_bus import set_active_bus
 
     set_active_bus(None)
+
+    # Clear the notifier singleton.
+    from ..notifications import set_active_notifier
+
+    set_active_notifier(None)
 
     # Close any live broker connections (global adapters + per-tenant cache).
     from ..execution.registry import ExecutionRegistry
