@@ -25,8 +25,10 @@ PERSONA_ID = UUID("00000000-0000-0000-0000-000000000002")
 async def session(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as s:
-        # Seed tenant and persona
+        # Seed tenant first so the persona FK insert sees it on Postgres
+        # (SQLite's lax FK enforcement was hiding an ordering issue here).
         s.add(TenantModel(id=TENANT_ID, name="test"))
+        await s.commit()
         s.add(
             PersonaModel(
                 id=PERSONA_ID,
